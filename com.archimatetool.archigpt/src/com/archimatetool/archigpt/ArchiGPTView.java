@@ -225,21 +225,30 @@ public class ArchiGPTView extends ViewPart {
                     }
                     updateStatus("Response received. Parsing and validating…");
                     ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(raw);
-                    List<String> errors = ArchiMateSchemaValidator.validate(parsed);
-                    if (!errors.isEmpty()) {
-                        toShow = "Validation failed (ArchiMate 3.2 schema):\n\n" + String.join("\n", errors)
-                                + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
-                    } else if (parsed.getError() != null && !parsed.getError().isEmpty()) {
+                    boolean hasImportData = !parsed.getElements().isEmpty() || !parsed.getRelationships().isEmpty();
+                    if (parsed.getError() != null && !parsed.getError().isEmpty()) {
                         toShow = "LLM reported: " + parsed.getError() + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
+                    } else if (!hasImportData) {
+                        toShow = "Analysis result:\n\n" + raw;
                     } else {
-                        List<IArchimateModel> open = IEditorModelManager.INSTANCE.getModels();
-                        if (open.isEmpty()) {
-                            toShow = "No open model to import into.\n\nParsed: " + parsed.getElements().size() + " elements, " + parsed.getRelationships().size() + " relationships."
+                        List<String> errors = ArchiMateSchemaValidator.validate(parsed);
+                        if (!errors.isEmpty()) {
+                            toShow = "Validation failed (ArchiMate 3.2 schema):\n\n" + String.join("\n", errors)
                                     + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                         } else {
-                            ArchiMateLLMImporter.importIntoModel(parsed, open.get(0));
-                            toShow = "Imported into model \"" + open.get(0).getName() + "\": " + parsed.getElements().size() + " elements, " + parsed.getRelationships().size() + " relationships."
-                                    + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
+                            final ArchiMateLLMResult resultToImport = parsed;
+                            final String[] importMessage = new String[1];
+                            Display.getDefault().syncExec(() -> {
+                                List<IArchimateModel> open = IEditorModelManager.INSTANCE.getModels();
+                                if (open.isEmpty()) {
+                                    importMessage[0] = "No open model to import into.\n\nParsed: " + resultToImport.getElements().size() + " elements, " + resultToImport.getRelationships().size() + " relationships.";
+                                } else {
+                                    IArchimateModel model = open.get(0);
+                                    ArchiMateLLMImporter.importIntoModel(resultToImport, model);
+                                    importMessage[0] = "Imported into model \"" + model.getName() + "\": " + resultToImport.getElements().size() + " elements, " + resultToImport.getRelationships().size() + " relationships.";
+                                }
+                            });
+                            toShow = importMessage[0] + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                         }
                     }
                 } catch (IOException e) {

@@ -14,10 +14,12 @@ public final class ArchiMateSystemPrompt {
 
     /**
      * System prompt that instructs the model to use only Open Group ArchiMate 3.2
-     * and to respond with valid JSON that can be validated and imported into Archi.
+     * and to respond either with plain text (analysis) or JSON (changes to import).
      */
     public static final String SYSTEM_PROMPT = "You are an expert in the Open Group ArchiMate 3.2 specification. "
-            + "You must respond ONLY with valid ArchiMate 3.2 concepts. "
+            + "Respond in one of two ways depending on the user's request:\n\n"
+            + "1) ANALYSIS: When the user asks for analysis, description, explanation, or review of the model or selected elements (e.g. \"analyze this\", \"describe this view\", \"explain this element\", \"what does this do\", \"review the architecture\"), respond with plain text only. Describe the passed model or element and give your analysis result. No JSON, no code block. Just clear prose.\n\n"
+            + "2) CHANGES: When the user asks for changes or additions to the architecture model (new elements, relationships, etc.), respond ONLY with a single JSON object, no other text, no markdown fence. "
             + "Use only official ArchiMate 3.2 element types (e.g. BusinessActor, BusinessRole, BusinessFunction, BusinessProcess, "
             + "ApplicationComponent, ApplicationService, ApplicationInterface, DataObject, TechnologyNode, Device, SystemSoftware, "
             + "Artifact, Deliverable, Goal, Outcome, Principle, Requirement, ValueStream, Capability, Resource, CourseOfAction, "
