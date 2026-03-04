@@ -19,42 +19,12 @@ ArchiGPT is a view that provides a text prompt box for interacting with your Arc
 - **CHANGES mode**: For add/change prompts, the LLM returns JSON (elements and relationships). The importer validates against ArchiMate 3.2 and skips elements that already exist in the model (same type and name). New elements are added to the selected folder (or the folder of the selected element). If a diagram is open or a view is selected, new elements are also added as figures on that view.
 - **Background job**: Requests run in a background job so the UI stays responsive.
 
-**Build & deploy:** Export as a deployable plug-in from Eclipse and copy the JAR into Archi’s `dropins` folder (e.g. `~/Library/Application Support/Archi/dropins` on macOS).
-
-- **Headless (Ant):** From repo root: `eclipse -nosplash -application org.eclipse.ant.core.antRunner -data /path/to/workspace -buildfile build.xml` (workspace must contain the project and Archi as target). Output: `build-output/`.
-- **Maven:** See [Building with Maven](#building-with-maven) below.
-
-## Building with Maven
-
-You need a p2 repository that contains Archi’s `com.archimatetool.editor` bundle. Two options:
-
-### If you have Archi sources
-
-1. Clone [Archi](https://github.com/archimatetool/archi) and build it:
-   ```bash
-   cd archi
-   mvn clean package -P product
-   ```
-2. Build ArchiGPT with the profile that adds the local Archi p2 repo. From this repo’s root:
-   ```bash
-   mvn clean package -P with-archi
-   ```
-   On Java 24+ set `export MAVEN_OPTS="-Djdk.xml.maxGeneralEntitySizeLimit=2147483647 -Djdk.xml.totalEntitySizeLimit=2147483647"` so Tycho can read p2 XML. To build only the plugin (skip tests): `mvn clean package -pl com.archimatetool.archigpt -P with-archi -DskipTests -Darchi.repo.path=/path/to/archi/com.archimatetool.editor.product/target/repository`.  
-   **Where the p2 repo is:** The build *default* looks for a sibling folder `archi` next to this repo (i.e. `../archi/.../target/repository`). If your Archi source lives elsewhere (e.g. in OneDrive), pass `-Darchi.repo.path=` with the full path to the `repository` folder inside the Archi product build (e.g. `.../ArchiGPT/archi/com.archimatetool.editor.product/target/repository`). You can also create a symlink `archi` pointing at your Archi clone so the default path works.
-
-### If you only have an Archi installation
-
-Maven/Tycho cannot use a plain “plugins” folder; it needs a p2 repository. You can:
-
-- **Option A:** Build Archi from source once (steps above), then use `-P with-archi` for ArchiGPT.
-- **Option B:** Use Eclipse to build: open `archigpt.target`, add a *Directory* location pointing at your Archi installation’s `plugins` folder (e.g. `Archi.app/Contents/Eclipse/plugins` on macOS), set it as target platform, then export the plugin (File → Export → Deployable plug-ins).
-
-The built JAR is in `com.archimatetool.archigpt/target/`. See [Installing and using the plugin](#installing-and-using-the-plugin) for how to install it in Archi’s `dropins` folder.
+To build from source, see [build.md](build.md).
 
 ## Installing and using the plugin
 
 1. **Get the plugin JAR**  
-   After building, the plugin JAR is at `com.archimatetool.archigpt/target/com.archimatetool.archigpt_*.jar` (or in `build-output/` if you used the Ant build).
+   After building (see [build.md](build.md)), the plugin JAR is at `com.archimatetool.archigpt/target/com.archimatetool.archigpt_*.jar` (or in `build-output/` if you used the Ant build).
 
 2. **Close Archi**  
    Quit Archi completely before installing the plugin.
