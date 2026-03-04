@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+   <extension
+         point="org.eclipse.ui.views">
+      <category
+            id="com.archimatetool.archigpt"
+            name="ArchiGPT">
+      </category>
+      <view
+            category="com.archimatetool.archigpt"
+            class="com.archimatetool.archigpt.ArchiGPTView"
+            id="com.archimatetool.archigpt.view"
+            name="ArchiGPT"
+            restorable="true">
+      </view>
+   </extension>
+</plugin>

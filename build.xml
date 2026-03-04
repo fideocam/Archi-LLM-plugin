@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Build ArchiGPT plugin. Run with Eclipse Ant runner from a workspace
+  that contains the com.archimatetool.archigpt project and has Archi as target:
+
+  eclipse -nosplash -application org.eclipse.ant.core.antRunner \
+    -data /path/to/your/workspace \
+    -buildfile build.xml
+
+  Output JAR is in build-output/ (or use -Dexport.dest=/path).
+-->
+<project name="ArchiGPT Build" default="export">
+  <property name="export.dest" value="${basedir}/build-output"/>
+
+  <target name="export" description="Export ArchiGPT plugin as a deployable JAR">
+    <pde.exportPlugins
+      destination="${export.dest}"
+      exportSource="false"
+      exportType="directory"
+      plugins="com.archimatetool.archigpt"
+      useJARFormat="true"/>
+    <echo message="ArchiGPT plugin exported to ${export.dest}"/>
+  </target>
+
+  <target name="clean" description="Remove build output">
+    <delete dir="${export.dest}" failonerror="false"/>
+  </target>
+</project>

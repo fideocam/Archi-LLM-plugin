@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?pde version="3.8"?>
+<!--
+  Eclipse target definition for ArchiGPT.
+  Use in Eclipse: Right-click this file → Set as Target Platform.
+
+  Option A – Archi from source (p2 repo):
+  Point the "Software site" below to your Archi build output, e.g.:
+  file:/path/to/archi/com.archimatetool.editor.product/target/repository
+
+  Option B – Archi installation (plugins directory):
+  Add a "Directory" location pointing to your Archi app's plugins folder, e.g.:
+  - macOS:   /Applications/Archi.app/Contents/Eclipse/plugins
+  - Windows: C:\Program Files\Archi\plugins
+  - Linux:   /opt/archi/plugins
+  Then remove or comment out the "Software site" location for Archi.
+-->
+<target name="ArchiGPT Target" sequenceNumber="1">
+  <locations>
+    <location includeMode="planner" includeAllPlatforms="false" includeConfigurePhase="true" includeSource="true" type="Installation">
+      <unit id="org.eclipse.epp.package.rcp.feature.group" version="0.0.0"/>
+      <repository location="https://download.eclipse.org/releases/2024-03"/>
+    </location>
+    <!-- Add a "Directory" location for your Archi installation's plugins folder if you don't have a p2 repo -->
+    <!-- <location path="/Applications/Archi.app/Contents/Eclipse/plugins" type="Directory"/> -->
+  </locations>
+</target>
