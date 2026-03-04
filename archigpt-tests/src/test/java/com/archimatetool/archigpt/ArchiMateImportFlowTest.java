@@ -46,7 +46,7 @@ public class ArchiMateImportFlowTest {
         assertTrue("Validation should pass: " + errors, errors.isEmpty());
 
         Class<?> factoryClass = Class.forName("com.archimatetool.model.IArchimateFactory");
-        Object factory = factoryClass.getMethod("eINSTANCE").invoke(null);
+        Object factory = factoryClass.getField("eINSTANCE").get(null);
         Object model = factoryClass.getMethod("createArchimateModel").invoke(factory);
         model.getClass().getMethod("setDefaults").invoke(model);
 
@@ -61,5 +61,38 @@ public class ArchiMateImportFlowTest {
             totalElements += ((List<?>) elements).size();
         }
         assertTrue("Model should contain elements and relationships", totalElements >= 3);
+    }
+
+    @Test
+    public void importDuplicateElement_skipsExistingElement() throws Exception {
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(GOOD_LLM_RESPONSE);
+        List<String> errors = ArchiMateSchemaValidator.validate(parsed);
+        assertTrue("Validation should pass: " + errors, errors.isEmpty());
+
+        Class<?> factoryClass = Class.forName("com.archimatetool.model.IArchimateFactory");
+        Object factory = factoryClass.getField("eINSTANCE").get(null);
+        Object model = factoryClass.getMethod("createArchimateModel").invoke(factory);
+        model.getClass().getMethod("setDefaults").invoke(model);
+
+        Method importMethod = ArchiMateLLMImporter.class.getMethod("importIntoModel", ArchiMateLLMResult.class, Class.forName("com.archimatetool.model.IArchimateModel"));
+        importMethod.invoke(null, parsed, model);
+
+        int countAfterFirst = countElementsInModel(model);
+        assertTrue("First import should add elements", countAfterFirst >= 2);
+
+        importMethod.invoke(null, parsed, model);
+
+        int countAfterSecond = countElementsInModel(model);
+        assertEquals("Second import with same elements should not duplicate (duplicates skipped)", countAfterFirst, countAfterSecond);
+    }
+
+    private static int countElementsInModel(Object model) throws Exception {
+        int total = 0;
+        Object folders = model.getClass().getMethod("getFolders").invoke(model);
+        for (Object folder : (Iterable<?>) folders) {
+            Object elements = folder.getClass().getMethod("getElements").invoke(folder);
+            total += ((List<?>) elements).size();
+        }
+        return total;
     }
 }

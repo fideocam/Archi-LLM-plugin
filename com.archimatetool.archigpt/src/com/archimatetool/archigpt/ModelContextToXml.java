@@ -6,9 +6,11 @@ package com.archimatetool.archigpt;
 
 import org.eclipse.emf.ecore.EObject;
 
+import com.archimatetool.model.IArchimateDiagramModel;
 import com.archimatetool.model.IArchimateElement;
 import com.archimatetool.model.IArchimateModel;
 import com.archimatetool.model.IArchimateRelationship;
+import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IFolder;
 
 /**
@@ -32,6 +34,7 @@ public final class ModelContextToXml {
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         sb.append("<archimateModel name=\"").append(escape(model.getName())).append("\">\n");
         appendFolders(sb, model.getFolders(), 1);
+        appendViewsAndDiagrams(sb, model.getDiagramModels(), 1);
         sb.append("</archimateModel>");
         String out = sb.toString();
         if (out.length() > MAX_XML_CHARS) {
@@ -55,6 +58,22 @@ public final class ModelContextToXml {
             appendFolders(sb, folder.getFolders(), indent + 1);
             sb.append(pad).append("</folder>\n");
         }
+    }
+
+    private static void appendViewsAndDiagrams(StringBuilder sb, java.util.List<IDiagramModel> diagramModels, int indent) {
+        if (diagramModels == null || diagramModels.isEmpty()) return;
+        String pad = repeat("  ", indent);
+        sb.append(pad).append("<viewsAndDiagrams>\n");
+        for (IDiagramModel dm : diagramModels) {
+            String name = dm.getName() != null ? dm.getName() : "";
+            if (dm instanceof IArchimateDiagramModel) {
+                String viewpoint = ((IArchimateDiagramModel) dm).getViewpoint() != null ? ((IArchimateDiagramModel) dm).getViewpoint() : "";
+                sb.append(pad).append("  ").append("<view name=\"").append(escape(name)).append("\" viewpoint=\"").append(escape(viewpoint)).append("\"/>\n");
+            } else {
+                sb.append(pad).append("  ").append("<diagram name=\"").append(escape(name)).append("\"/>\n");
+            }
+        }
+        sb.append(pad).append("</viewsAndDiagrams>\n");
     }
 
     private static void appendElement(StringBuilder sb, IArchimateElement element, int indent) {

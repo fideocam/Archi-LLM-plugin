@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.eclipse.emf.ecore.EClass;
+import org.eclipse.emf.ecore.EObject;
 
 import com.archimatetool.model.IArchimateDiagramModel;
 import com.archimatetool.model.IArchimateConcept;
@@ -59,8 +60,12 @@ public final class ArchiMateLLMImporter {
             if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
                 continue;
             }
+            String name = e.getName() != null ? e.getName() : "";
+            if (elementExistsInModel(model, eClass, name)) {
+                continue;
+            }
             IArchimateElement element = (IArchimateElement) IArchimateFactory.eINSTANCE.create(eClass);
-            element.setName(e.getName() != null ? e.getName() : "");
+            element.setName(name);
             element.setId(e.getId());
             IFolder folder = targetFolder != null ? targetFolder : model.getDefaultFolderForObject(element);
             folder.getElements().add(element);
@@ -95,5 +100,28 @@ public final class ArchiMateLLMImporter {
             IFolder folder = targetFolder != null ? targetFolder : model.getDefaultFolderForObject(rel);
             folder.getElements().add(rel);
         }
+    }
+
+    private static boolean elementExistsInModel(IArchimateModel model, EClass eClass, String name) {
+        if (model == null || eClass == null) return false;
+        String n = name == null ? "" : name.trim();
+        for (IFolder f : model.getFolders()) {
+            if (folderContainsElementWithTypeAndName(f, eClass, n)) return true;
+        }
+        return false;
+    }
+
+    private static boolean folderContainsElementWithTypeAndName(IFolder folder, EClass eClass, String name) {
+        if (folder == null) return false;
+        for (EObject obj : folder.getElements()) {
+            if (obj instanceof IArchimateElement && eClass.isInstance(obj)) {
+                String existing = ((IArchimateElement) obj).getName();
+                if (existing != null && existing.trim().equalsIgnoreCase(name)) return true;
+            }
+        }
+        for (IFolder child : folder.getFolders()) {
+            if (folderContainsElementWithTypeAndName(child, eClass, name)) return true;
+        }
+        return false;
     }
 }
