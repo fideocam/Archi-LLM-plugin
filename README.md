@@ -12,11 +12,12 @@ ArchiGPT is a view that provides a text prompt box for interacting with your Arc
 - After restart, open the view: in the menu bar click **ArchiGPT → Show ArchiGPT View**. You may also find it under **Help → Show ArchiGPT View** or **Tools → ArchiGPT**.
 
 **Current features:**
-- View with a prompt text area and "Ask ArchiGPT" button
-- **Ollama integration**: sends the prompt to local Ollama (`http://localhost:11434`) and shows the response. Default model: `llama3.2`. Ensure [Ollama](https://ollama.com) is running.
-- **Import to folder and view**: new elements are added to the selected folder (or the folder of the selected element). If a diagram view is open in the editor or a view is selected in the tree, the new elements are also added as figures on that view.
-- Requests run in a background job so the UI stays responsive
-- Ready to extend with model context and preferences for base URL/model
+- **View**: Prompt text area, "Ask ArchiGPT" button, and **Enter** to submit (Shift+Enter for new line). **Stop** button cancels the request and disconnects Ollama.
+- **Ollama integration**: Sends the prompt to local Ollama (`http://localhost:11434`). Default model: `llama3.2`. Ensure [Ollama](https://ollama.com) is running. Status messages show connection and progress; raw LLM response (truncated) is shown in the result.
+- **Model as context**: The open ArchiMate model is serialized to XML (elements, relationships, views and diagrams) and sent to the LLM with every request so it can avoid duplicates and describe the actual content.
+- **Analysis mode**: For analysis/description/review prompts, the LLM replies in plain text. The system prompt instructs it to use [Open Group ArchiMate XSDs](https://www.opengroup.org/xsd/archimate/) as reference, to minimize hallucinations (only refer to elements in the supplied model), and to include views and diagrams when describing the full model. The response area shows the supplied model XML first, then the analysis.
+- **CHANGES mode**: For add/change prompts, the LLM returns JSON (elements and relationships). The importer validates against ArchiMate 3.2 and skips elements that already exist in the model (same type and name). New elements are added to the selected folder (or the folder of the selected element). If a diagram is open or a view is selected, new elements are also added as figures on that view.
+- **Background job**: Requests run in a background job so the UI stays responsive.
 
 **Build & deploy:** Export as a deployable plug-in from Eclipse and copy the JAR into Archi’s `dropins` folder (e.g. `~/Library/Application Support/Archi/dropins` on macOS).
 
