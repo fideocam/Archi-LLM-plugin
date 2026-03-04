@@ -38,7 +38,8 @@ You need a p2 repository that contains Archi’s `com.archimatetool.editor` bund
    ```bash
    mvn clean package -P with-archi
    ```
-   On Java 24+ set `export MAVEN_OPTS="-Djdk.xml.maxGeneralEntitySizeLimit=2147483647 -Djdk.xml.totalEntitySizeLimit=2147483647"` so Tycho can read p2 XML. To build only the plugin (skip tests): `mvn clean package -pl com.archimatetool.archigpt -P with-archi -Darchi.repo.path=/path/to/archi/com.archimatetool.editor.product/target/repository`. By default the path is `../archi/.../target/repository`. If your Archi build puts the p2 repo elsewhere, set `archi.repo.path` to that folder.
+   On Java 24+ set `export MAVEN_OPTS="-Djdk.xml.maxGeneralEntitySizeLimit=2147483647 -Djdk.xml.totalEntitySizeLimit=2147483647"` so Tycho can read p2 XML. To build only the plugin (skip tests): `mvn clean package -pl com.archimatetool.archigpt -P with-archi -DskipTests -Darchi.repo.path=/path/to/archi/com.archimatetool.editor.product/target/repository`.  
+   **Where the p2 repo is:** The build *default* looks for a sibling folder `archi` next to this repo (i.e. `../archi/.../target/repository`). If your Archi source lives elsewhere (e.g. in OneDrive), pass `-Darchi.repo.path=` with the full path to the `repository` folder inside the Archi product build (e.g. `.../ArchiGPT/archi/com.archimatetool.editor.product/target/repository`). You can also create a symlink `archi` pointing at your Archi clone so the default path works.
 
 ### If you only have an Archi installation
 
