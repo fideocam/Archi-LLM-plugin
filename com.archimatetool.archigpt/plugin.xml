@@ -15,4 +15,34 @@
             restorable="true">
       </view>
    </extension>
+   <!-- Menu item: Help → Show ArchiGPT View (and Window → Show View → ArchiGPT if Window menu exists) -->
+   <extension
+         point="org.eclipse.ui.menus">
+      <menuContribution
+            locationURI="menu:help?after=additions">
+         <command
+               commandId="org.eclipse.ui.views.showView"
+               id="com.archimatetool.archigpt.showView"
+               label="Show ArchiGPT View"
+               style="push">
+            <parameter
+                  name="org.eclipse.ui.views.showView.viewId"
+                  value="com.archimatetool.archigpt.view">
+            </parameter>
+         </command>
+      </menuContribution>
+      <menuContribution
+            locationURI="menu:window?after=additions">
+         <command
+               commandId="org.eclipse.ui.views.showView"
+               id="com.archimatetool.archigpt.showView.window"
+               label="ArchiGPT"
+               style="push">
+            <parameter
+                  name="org.eclipse.ui.views.showView.viewId"
+                  value="com.archimatetool.archigpt.view">
+            </parameter>
+         </command>
+      </menuContribution>
+   </extension>
 </plugin>
