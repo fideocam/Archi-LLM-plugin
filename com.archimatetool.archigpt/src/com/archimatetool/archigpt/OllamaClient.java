@@ -35,6 +35,26 @@ public class OllamaClient {
     }
 
     /**
+     * Check that Ollama is reachable (e.g. for user feedback before a long request).
+     *
+     * @return true if the server responds
+     */
+    public boolean checkConnection() {
+        try {
+            URL url = new URL(baseUrl + "/api/tags");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(3000);
+            int code = conn.getResponseCode();
+            conn.disconnect();
+            return code >= 200 && code < 400;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
      * Send a user prompt with a system prompt (e.g. ArchiMate 3.2 instructions) using the chat API.
      *
      * @param systemPrompt system message that defines role and output format

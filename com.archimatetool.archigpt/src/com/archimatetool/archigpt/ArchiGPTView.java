@@ -36,6 +36,9 @@ public class ArchiGPTView extends ViewPart {
 
     private Text promptText;
     private Text responseText;
+    private Button sendButton;
+    private Button stopButton;
+    private Job currentJob;
 
     @Override
     public void createPartControl(Composite parent) {
@@ -56,13 +59,32 @@ public class ArchiGPTView extends ViewPart {
         promptText.setLayoutData(promptData);
         promptText.setMessage("Describe the change you want to make to your ArchiMate model...");
 
-        Button sendButton = new Button(parent, SWT.PUSH);
+        Composite buttonBar = new Composite(parent, SWT.NONE);
+        buttonBar.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        GridLayout buttonLayout = new GridLayout(2, false);
+        buttonLayout.marginWidth = 0;
+        buttonLayout.marginHeight = 0;
+        buttonLayout.horizontalSpacing = 8;
+        buttonBar.setLayout(buttonLayout);
+
+        sendButton = new Button(buttonBar, SWT.PUSH);
         sendButton.setText("Ask ArchiGPT");
         sendButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
         sendButton.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
                 onSendPrompt();
+            }
+        });
+
+        stopButton = new Button(buttonBar, SWT.PUSH);
+        stopButton.setText("Stop");
+        stopButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        stopButton.setVisible(false);
+        stopButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                onStopRequest();
             }
         });
 
@@ -77,6 +99,29 @@ public class ArchiGPTView extends ViewPart {
         responseText.setLayoutData(responseData);
     }
 
+    private void setRequestInProgress(boolean inProgress) {
+        if (promptText == null || promptText.isDisposed()) return;
+        Runnable update = () -> {
+            if (promptText.isDisposed()) return;
+            promptText.setEditable(!inProgress);
+            promptText.setForeground(promptText.getDisplay().getSystemColor(
+                    inProgress ? SWT.COLOR_DARK_GRAY : SWT.COLOR_WIDGET_FOREGROUND));
+            sendButton.setEnabled(!inProgress);
+            stopButton.setVisible(inProgress);
+        };
+        if (Display.getCurrent() != null) {
+            update.run();
+        } else {
+            Display.getDefault().asyncExec(update);
+        }
+    }
+
+    private void onStopRequest() {
+        if (currentJob != null) {
+            currentJob.cancel();
+        }
+    }
+
     private void onSendPrompt() {
         String prompt = promptText.getText().trim();
         if (prompt.isEmpty()) {
@@ -89,15 +134,44 @@ public class ArchiGPTView extends ViewPart {
         }
 
         final Text responseWidget = responseText;
+        setRequestInProgress(true);
         responseText.setText("Connecting to Ollama…");
 
-        Job job = new Job("ArchiGPT – Ollama") {
+        currentJob = new Job("ArchiGPT – Ollama") {
+            private void updateStatus(String message) {
+                Display.getDefault().asyncExec(() -> {
+                    if (responseWidget != null && !responseWidget.isDisposed()) {
+                        responseWidget.setText(message);
+                    }
+                });
+            }
+
+            private void finishRequest(String message) {
+                Display.getDefault().asyncExec(() -> {
+                    if (responseWidget != null && !responseWidget.isDisposed()) {
+                        responseWidget.setText(message);
+                    }
+                    setRequestInProgress(false);
+                    currentJob = null;
+                });
+            }
+
             @Override
             protected IStatus run(IProgressMonitor monitor) {
                 String toShow;
                 try {
                     OllamaClient client = new OllamaClient();
+                    if (!client.checkConnection()) {
+                        finishRequest("Cannot reach Ollama at " + OllamaClient.DEFAULT_BASE_URL + ". Is Ollama running? (e.g. ollama serve)");
+                        return Status.OK_STATUS;
+                    }
+                    updateStatus("Connection OK. Sending request to Ollama. Waiting for response (this may take a minute)…");
                     String raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, prompt);
+                    if (monitor.isCanceled()) {
+                        finishRequest("Cancelled.");
+                        return Status.CANCEL_STATUS;
+                    }
+                    updateStatus("Response received. Parsing and validating…");
                     ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(raw);
                     List<String> errors = ArchiMateSchemaValidator.validate(parsed);
                     if (!errors.isEmpty()) {
@@ -117,16 +191,11 @@ public class ArchiGPTView extends ViewPart {
                 } catch (IOException e) {
                     toShow = "Error: " + e.getMessage() + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + OllamaClient.DEFAULT_MODEL + ").";
                 }
-                final String msg = toShow;
-                Display.getDefault().asyncExec(() -> {
-                    if (responseWidget != null && !responseWidget.isDisposed()) {
-                        responseWidget.setText(msg);
-                    }
-                });
+                finishRequest(toShow);
                 return Status.OK_STATUS;
             }
         };
-        job.schedule();
+        currentJob.schedule();
     }
 
     @Override
