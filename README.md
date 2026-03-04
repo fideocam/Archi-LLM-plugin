@@ -31,11 +31,7 @@ You need a p2 repository that contains Archi’s `com.archimatetool.editor` bund
    ```bash
    mvn clean package -P with-archi
    ```
-   By default the path is `../archi/com.archimatetool.editor.product/target/repository`. If Archi is elsewhere, set it:
-   ```bash
-   mvn clean package -P with-archi -Darchi.repo.path=/path/to/archi/com.archimatetool.editor.product/target/repository
-   ```
-   If your Archi build puts the p2 repo in a different folder, point `archi.repo.path` to that folder.
+   On Java 24+ set `export MAVEN_OPTS="-Djdk.xml.maxGeneralEntitySizeLimit=2147483647 -Djdk.xml.totalEntitySizeLimit=2147483647"` so Tycho can read p2 XML. To build only the plugin (skip tests): `mvn clean package -pl com.archimatetool.archigpt -P with-archi -Darchi.repo.path=/path/to/archi/com.archimatetool.editor.product/target/repository`. By default the path is `../archi/.../target/repository`. If your Archi build puts the p2 repo elsewhere, set `archi.repo.path` to that folder.
 
 ### If you only have an Archi installation
 
@@ -54,8 +50,9 @@ The built JAR is in `com.archimatetool.archigpt/target/`. See [Installing and us
 2. **Close Archi**  
    Quit Archi completely before installing the plugin.
 
-3. **Copy the JAR into Archi's dropins folder**  
-   Create the folder if it does not exist, then copy the JAR into it:
+3. **Install the plugin** (either method):
+   - **Via Help → Manage Archi Plug-ins:** Use the packaged `export/ArchiGPT.archiplugin` file. In Archi choose **Help → Manage Archi Plug-ins**, click **Install new**, select `ArchiGPT.archiplugin`, then restart Archi. The `.archiplugin` file is a zip that contains the magic entry `archi-plugin` plus the plugin JAR (create it with `scripts/create-archiplugin.sh` after building).
+   - **Manual:** Copy the JAR into Archi's dropins folder. Create the folder if it does not exist:
 
    | OS      | Dropins folder |
    |---------|-----------------------------------------------|

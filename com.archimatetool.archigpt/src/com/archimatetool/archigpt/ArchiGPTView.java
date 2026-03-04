@@ -83,7 +83,7 @@ public class ArchiGPTView extends ViewPart {
             responseText.setText("Please enter a prompt.");
             return;
         }
-        if (IEditorModelManager.INSTANCE.getOpenModels().isEmpty()) {
+        if (IEditorModelManager.INSTANCE.getModels().isEmpty()) {
             responseText.setText("Open an ArchiMate model first. ArchiGPT will use it as context.");
             return;
         }
@@ -106,7 +106,7 @@ public class ArchiGPTView extends ViewPart {
                     } else if (parsed.getError() != null && !parsed.getError().isEmpty()) {
                         toShow = "LLM reported: " + parsed.getError() + "\n\nRaw:\n" + raw;
                     } else {
-                        List<IArchimateModel> open = IEditorModelManager.INSTANCE.getOpenModels();
+                        List<IArchimateModel> open = IEditorModelManager.INSTANCE.getModels();
                         if (open.isEmpty()) {
                             toShow = "No open model to import into.\n\nParsed: " + parsed.getElements().size() + " elements, " + parsed.getRelationships().size() + " relationships.";
                         } else {
