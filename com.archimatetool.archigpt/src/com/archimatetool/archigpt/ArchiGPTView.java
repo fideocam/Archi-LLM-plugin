@@ -45,6 +45,8 @@ public class ArchiGPTView extends ViewPart {
     private Job currentJob;
     /** Holder for the active HTTP connection so Stop can disconnect it and abort the Ollama request. */
     private volatile AtomicReference<HttpURLConnection> currentConnectionRef;
+    /** Set when user clicks Stop so the job can treat IOException as cancel even before monitor is updated. */
+    private volatile boolean userRequestedCancel;
 
     @Override
     public void createPartControl(Composite parent) {
@@ -130,6 +132,7 @@ public class ArchiGPTView extends ViewPart {
     }
 
     private void onStopRequest() {
+        userRequestedCancel = true;
         responseText.setText("Cancelling…");
         if (currentJob != null) {
             currentJob.cancel();
@@ -141,6 +144,12 @@ public class ArchiGPTView extends ViewPart {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null) return "";
+        if (s.length() <= maxLen) return s;
+        return s.substring(0, maxLen) + "\n\n... (truncated)";
     }
 
     private void onSendPrompt() {
@@ -166,6 +175,7 @@ public class ArchiGPTView extends ViewPart {
         final String userMessage = buildUserMessage(selectionContext, prompt);
 
         final Text responseWidget = responseText;
+        userRequestedCancel = false;
         currentConnectionRef = new AtomicReference<>();
         setRequestInProgress(true);
         responseText.setText("Connecting to Ollama…");
@@ -191,7 +201,8 @@ public class ArchiGPTView extends ViewPart {
 
             @Override
             protected IStatus run(IProgressMonitor monitor) {
-                String toShow;
+                String raw = null;
+                String toShow = "";
                 try {
                     OllamaClient client = new OllamaClient();
                     if (!client.checkConnection()) {
@@ -199,17 +210,16 @@ public class ArchiGPTView extends ViewPart {
                         return Status.OK_STATUS;
                     }
                     updateStatus("Connection OK. Sending request to Ollama. Waiting for response (this may take a minute)…");
-                    String raw;
                     try {
                         raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, userMessage, currentConnectionRef);
                     } catch (IOException e) {
-                        if (monitor.isCanceled()) {
+                        if (userRequestedCancel || monitor.isCanceled()) {
                             finishRequest("Cancelled. Ollama request stopped.");
                             return Status.CANCEL_STATUS;
                         }
                         throw e;
                     }
-                    if (monitor.isCanceled()) {
+                    if (userRequestedCancel || monitor.isCanceled()) {
                         finishRequest("Cancelled.");
                         return Status.CANCEL_STATUS;
                     }
@@ -218,24 +228,32 @@ public class ArchiGPTView extends ViewPart {
                     List<String> errors = ArchiMateSchemaValidator.validate(parsed);
                     if (!errors.isEmpty()) {
                         toShow = "Validation failed (ArchiMate 3.2 schema):\n\n" + String.join("\n", errors)
-                                + "\n\nRaw LLM response:\n" + raw;
+                                + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                     } else if (parsed.getError() != null && !parsed.getError().isEmpty()) {
-                        toShow = "LLM reported: " + parsed.getError() + "\n\nRaw:\n" + raw;
+                        toShow = "LLM reported: " + parsed.getError() + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                     } else {
                         List<IArchimateModel> open = IEditorModelManager.INSTANCE.getModels();
                         if (open.isEmpty()) {
-                            toShow = "No open model to import into.\n\nParsed: " + parsed.getElements().size() + " elements, " + parsed.getRelationships().size() + " relationships.";
+                            toShow = "No open model to import into.\n\nParsed: " + parsed.getElements().size() + " elements, " + parsed.getRelationships().size() + " relationships."
+                                    + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                         } else {
                             ArchiMateLLMImporter.importIntoModel(parsed, open.get(0));
-                            toShow = "Imported into model \"" + open.get(0).getName() + "\": " + parsed.getElements().size() + " elements, " + parsed.getRelationships().size() + " relationships.";
+                            toShow = "Imported into model \"" + open.get(0).getName() + "\": " + parsed.getElements().size() + " elements, " + parsed.getRelationships().size() + " relationships."
+                                    + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                         }
                     }
                 } catch (IOException e) {
-                    if (monitor.isCanceled()) {
+                    if (userRequestedCancel || monitor.isCanceled()) {
                         finishRequest("Cancelled. Ollama request stopped.");
                         return Status.CANCEL_STATUS;
                     }
                     toShow = "Error: " + e.getMessage() + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + OllamaClient.DEFAULT_MODEL + ").";
+                    if (raw != null) {
+                        toShow += "\n\nRaw LLM response:\n" + truncate(raw, 4000);
+                    }
+                } catch (Throwable t) {
+                    toShow = "Error while parsing or importing: " + t.getMessage()
+                            + (raw != null ? "\n\nRaw LLM response:\n" + truncate(raw, 4000) : "");
                 }
                 finishRequest(toShow);
                 return Status.OK_STATUS;
