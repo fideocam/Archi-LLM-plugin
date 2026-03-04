@@ -7,15 +7,16 @@ ArchiGPT is a view that provides a text prompt box for interacting with your Arc
 
 **How to use**
 
-- Download plugin from export folder here
+- Download the plugin file (ArchiGPT.archiplugin) from export folder 
 - Install from **Help → Manage Archi Plug-ins**
 - After restart, open the view: in the menu bar click **ArchiGPT → Show ArchiGPT View**. You may also find it under **Help → Show ArchiGPT View** or **Tools → ArchiGPT**.
 
 **Current features:**
 - View with a prompt text area and "Ask ArchiGPT" button
 - **Ollama integration**: sends the prompt to local Ollama (`http://localhost:11434`) and shows the response. Default model: `llama3.2`. Ensure [Ollama](https://ollama.com) is running.
+- **Import to folder and view**: new elements are added to the selected folder (or the folder of the selected element). If a diagram view is open in the editor or a view is selected in the tree, the new elements are also added as figures on that view.
 - Requests run in a background job so the UI stays responsive
-- Ready to extend with model context (opened ArchiMate model) and preferences for base URL/model
+- Ready to extend with model context and preferences for base URL/model
 
 **Build & deploy:** Export as a deployable plug-in from Eclipse and copy the JAR into Archi’s `dropins` folder (e.g. `~/Library/Application Support/Archi/dropins` on macOS).
 
@@ -92,7 +93,7 @@ Create a tool integrated into Archi that helps enterprise architects change Arch
 
 Reference: [Developing Import and Export Plug-ins](https://github.com/archimatetool/archi/wiki/Developing-Import-and-Export-Plug-ins).
 
-## Planned LLM support
+## Planned features 
 
 - Create an API call to an LLM (local Ollama or external)
 - Send the relevant part of the opened ArchiMate model to the LLM

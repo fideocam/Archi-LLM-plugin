@@ -24,11 +24,18 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
+import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.part.ViewPart;
 
 import com.archimatetool.editor.model.IEditorModelManager;
+import com.archimatetool.model.IArchimateConcept;
+import com.archimatetool.model.IArchimateDiagramModel;
 import com.archimatetool.model.IArchimateModel;
+import com.archimatetool.model.IDiagramModel;
+import com.archimatetool.model.IFolder;
+
+import org.eclipse.ui.IEditorPart;
 
 /**
  * ArchiGPT view with a text area for the user prompt and a button to send to the LLM.
@@ -244,8 +251,53 @@ public class ArchiGPTView extends ViewPart {
                                     importMessage[0] = "No open model to import into.\n\nParsed: " + resultToImport.getElements().size() + " elements, " + resultToImport.getRelationships().size() + " relationships.";
                                 } else {
                                     IArchimateModel model = open.get(0);
-                                    ArchiMateLLMImporter.importIntoModel(resultToImport, model);
-                                    importMessage[0] = "Imported into model \"" + model.getName() + "\": " + resultToImport.getElements().size() + " elements, " + resultToImport.getRelationships().size() + " relationships.";
+                                    IFolder targetFolder = null;
+                                    IArchimateDiagramModel targetDiagram = null;
+                                    try {
+                                        IWorkbenchWindow window = getViewSite().getWorkbenchWindow();
+                                        if (window != null) {
+                                            if (window.getSelectionService() != null) {
+                                                Object sel = window.getSelectionService().getSelection();
+                                                if (sel instanceof IStructuredSelection) {
+                                                    Object first = ((IStructuredSelection) sel).getFirstElement();
+                                                    if (first instanceof IFolder) {
+                                                        targetFolder = (IFolder) first;
+                                                    } else if (first instanceof IArchimateConcept) {
+                                                        Object container = ((IArchimateConcept) first).eContainer();
+                                                        if (container instanceof IFolder) {
+                                                            targetFolder = (IFolder) container;
+                                                        }
+                                                    } else if (first instanceof IArchimateDiagramModel && model.equals(((IArchimateDiagramModel) first).getArchimateModel())) {
+                                                        targetDiagram = (IArchimateDiagramModel) first;
+                                                    }
+                                                }
+                                            }
+                                            if (targetDiagram == null && window.getActivePage() != null) {
+                                                IEditorPart editor = window.getActivePage().getActiveEditor();
+                                                if (editor != null) {
+                                                    Object adapter = editor.getAdapter(IDiagramModel.class);
+                                                    if (adapter instanceof IArchimateDiagramModel) {
+                                                        IArchimateDiagramModel diagram = (IArchimateDiagramModel) adapter;
+                                                        if (model.equals(diagram.getArchimateModel())) {
+                                                            targetDiagram = diagram;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } catch (Exception ignored) {
+                                    }
+                                    ArchiMateLLMImporter.importIntoModel(resultToImport, model, targetFolder, targetDiagram);
+                                    StringBuilder where = new StringBuilder();
+                                    if (targetFolder != null) {
+                                        where.append(" into selected folder \"").append(targetFolder.getName()).append("\"");
+                                    }
+                                    if (targetDiagram != null) {
+                                        if (where.length() > 0) where.append(" and");
+                                        where.append(" added to view \"").append(targetDiagram.getName()).append("\"");
+                                    }
+                                    if (where.length() > 0) where.insert(0, " ");
+                                    importMessage[0] = "Imported into model \"" + model.getName() + "\"" + where + ": " + resultToImport.getElements().size() + " elements, " + resultToImport.getRelationships().size() + " relationships.";
                                 }
                             });
                             toShow = importMessage[0] + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
