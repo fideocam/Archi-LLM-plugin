@@ -5,11 +5,11 @@ Plugin to connect Archi ArchiMate modeling tool to user's chosen LLMs.
 
 ArchiGPT is a view that provides a text prompt box for interacting with your ArchiMate model via an LLM. 
 
-## How to use
+**How to use**
 
-**Download plugin from export folder here**
-**Install from Help →  Manage Plug-ins**
-**To open it in Archi:** use **Help → Show ArchiGPT View**. If your Archi has a Window menu, you can also use **Window → Show View → Other… → ArchiGPT → ArchiGPT**.
+- Download plugin from export folder here
+- Install from **Help → Manage Archi Plug-ins**
+- After restart, open the view: in the menu bar click **ArchiGPT → Show ArchiGPT View**. You may also find it under **Help → Show ArchiGPT View** or **Tools → ArchiGPT**.
 
 **Current features:**
 - View with a prompt text area and "Ask ArchiGPT" button

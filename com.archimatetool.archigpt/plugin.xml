@@ -15,15 +15,46 @@
             restorable="true">
       </view>
    </extension>
-   <!-- Menu item: Help → Show ArchiGPT View (and Window → Show View → ArchiGPT if Window menu exists) -->
+   <!-- Menu: add "ArchiGPT" to main menu bar and to Help/Tools/Window where available -->
    <extension
          point="org.eclipse.ui.menus">
+      <!-- Top-level ArchiGPT menu in main menu bar (visible in most RCP products including Archi) -->
+      <menuContribution
+            locationURI="menu:org.eclipse.ui.main.menu?after=additions">
+         <menu
+               id="com.archimatetool.archigpt.menu"
+               label="ArchiGPT">
+            <command
+                  commandId="org.eclipse.ui.views.showView"
+                  id="com.archimatetool.archigpt.showView.main"
+                  label="Show ArchiGPT View"
+                  style="push">
+               <parameter
+                     name="org.eclipse.ui.views.showView.viewId"
+                     value="com.archimatetool.archigpt.view">
+               </parameter>
+            </command>
+         </menu>
+      </menuContribution>
       <menuContribution
             locationURI="menu:help?after=additions">
          <command
                commandId="org.eclipse.ui.views.showView"
-               id="com.archimatetool.archigpt.showView"
+               id="com.archimatetool.archigpt.showView.help"
                label="Show ArchiGPT View"
+               style="push">
+            <parameter
+                  name="org.eclipse.ui.views.showView.viewId"
+                  value="com.archimatetool.archigpt.view">
+            </parameter>
+         </command>
+      </menuContribution>
+      <menuContribution
+            locationURI="menu:tools?after=additions">
+         <command
+               commandId="org.eclipse.ui.views.showView"
+               id="com.archimatetool.archigpt.showView.tools"
+               label="ArchiGPT"
                style="push">
             <parameter
                   name="org.eclipse.ui.views.showView.viewId"
