@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Eclipse / PDE
+bin/
+*.class
+
+# Maven
+target/
+
+# Build output
+build-output/
