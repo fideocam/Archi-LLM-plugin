@@ -6,6 +6,9 @@ package com.archimatetool.archigpt;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+
+import java.net.HttpURLConnection;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
@@ -21,6 +24,7 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
+import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.part.ViewPart;
 
 import com.archimatetool.editor.model.IEditorModelManager;
@@ -39,6 +43,8 @@ public class ArchiGPTView extends ViewPart {
     private Button sendButton;
     private Button stopButton;
     private Job currentJob;
+    /** Holder for the active HTTP connection so Stop can disconnect it and abort the Ollama request. */
+    private volatile AtomicReference<HttpURLConnection> currentConnectionRef;
 
     @Override
     public void createPartControl(Composite parent) {
@@ -116,9 +122,24 @@ public class ArchiGPTView extends ViewPart {
         }
     }
 
+    private static String buildUserMessage(String selectionContext, String prompt) {
+        if (selectionContext == null || selectionContext.isEmpty()) {
+            return prompt;
+        }
+        return selectionContext + "\n\nUser request: " + prompt;
+    }
+
     private void onStopRequest() {
+        responseText.setText("Cancelling…");
         if (currentJob != null) {
             currentJob.cancel();
+        }
+        HttpURLConnection conn = currentConnectionRef != null ? currentConnectionRef.get() : null;
+        if (conn != null) {
+            try {
+                conn.disconnect();
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -133,7 +154,19 @@ public class ArchiGPTView extends ViewPart {
             return;
         }
 
+        String selectionContext = "";
+        try {
+            IWorkbenchWindow window = getViewSite().getWorkbenchWindow();
+            if (window != null && window.getSelectionService() != null) {
+                selectionContext = SelectionContextBuilder.buildFromSelectionService(window.getSelectionService());
+            }
+        } catch (Exception e) {
+            // ignore; proceed without selection context
+        }
+        final String userMessage = buildUserMessage(selectionContext, prompt);
+
         final Text responseWidget = responseText;
+        currentConnectionRef = new AtomicReference<>();
         setRequestInProgress(true);
         responseText.setText("Connecting to Ollama…");
 
@@ -166,7 +199,16 @@ public class ArchiGPTView extends ViewPart {
                         return Status.OK_STATUS;
                     }
                     updateStatus("Connection OK. Sending request to Ollama. Waiting for response (this may take a minute)…");
-                    String raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, prompt);
+                    String raw;
+                    try {
+                        raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, userMessage, currentConnectionRef);
+                    } catch (IOException e) {
+                        if (monitor.isCanceled()) {
+                            finishRequest("Cancelled. Ollama request stopped.");
+                            return Status.CANCEL_STATUS;
+                        }
+                        throw e;
+                    }
                     if (monitor.isCanceled()) {
                         finishRequest("Cancelled.");
                         return Status.CANCEL_STATUS;
@@ -189,6 +231,10 @@ public class ArchiGPTView extends ViewPart {
                         }
                     }
                 } catch (IOException e) {
+                    if (monitor.isCanceled()) {
+                        finishRequest("Cancelled. Ollama request stopped.");
+                        return Status.CANCEL_STATUS;
+                    }
                     toShow = "Error: " + e.getMessage() + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + OllamaClient.DEFAULT_MODEL + ").";
                 }
                 finishRequest(toShow);

@@ -11,6 +11,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -55,16 +56,28 @@ public class OllamaClient {
     }
 
     /**
-     * Send a user prompt with a system prompt (e.g. ArchiMate 3.2 instructions) using the chat API.
-     *
-     * @param systemPrompt system message that defines role and output format
-     * @param userPrompt   user message (e.g. the requested model change)
-     * @return the model's response text (e.g. JSON for import)
+     * Send a user prompt with a system prompt using the chat API (no cancellation support).
      */
     public String generateWithSystemPrompt(String systemPrompt, String userPrompt) throws IOException {
+        return generateWithSystemPrompt(systemPrompt, userPrompt, null);
+    }
+
+    /**
+     * Send a user prompt with a system prompt (e.g. ArchiMate 3.2 instructions) using the chat API.
+     *
+     * @param systemPrompt    system message that defines role and output format
+     * @param userPrompt      user message (e.g. the requested model change)
+     * @param connectionHolder optional; if non-null, the active HttpURLConnection is stored here so the caller can disconnect it to cancel the request
+     * @return the model's response text (e.g. JSON for import)
+     */
+    public String generateWithSystemPrompt(String systemPrompt, String userPrompt,
+            AtomicReference<HttpURLConnection> connectionHolder) throws IOException {
         String requestBody = buildChatRequestJson(systemPrompt, userPrompt);
         URL url = new URL(baseUrl + "/api/chat");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        if (connectionHolder != null) {
+            connectionHolder.set(conn);
+        }
         try {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
@@ -84,6 +97,9 @@ public class OllamaClient {
             }
             return extractMessageContent(body != null ? body : "");
         } finally {
+            if (connectionHolder != null) {
+                connectionHolder.set(null);
+            }
             conn.disconnect();
         }
     }
