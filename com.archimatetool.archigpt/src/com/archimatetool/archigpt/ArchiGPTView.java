@@ -15,6 +15,8 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.events.KeyAdapter;
+import org.eclipse.swt.events.KeyEvent;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
@@ -73,6 +75,17 @@ public class ArchiGPTView extends ViewPart {
         promptData.heightHint = 120;
         promptText.setLayoutData(promptData);
         promptText.setMessage("Describe the change you want to make to your ArchiMate model...");
+        promptText.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) {
+                    if ((e.stateMask & SWT.SHIFT) == 0) {
+                        e.doit = false;
+                        onSendPrompt();
+                    }
+                }
+            }
+        });
 
         Composite buttonBar = new Composite(parent, SWT.NONE);
         buttonBar.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
@@ -131,11 +144,16 @@ public class ArchiGPTView extends ViewPart {
         }
     }
 
-    private static String buildUserMessage(String selectionContext, String prompt) {
-        if (selectionContext == null || selectionContext.isEmpty()) {
-            return prompt;
+    private static String buildUserMessage(String selectionContext, String modelXml, String prompt) {
+        StringBuilder sb = new StringBuilder();
+        if (modelXml != null && !modelXml.isEmpty()) {
+            sb.append("Supplied ArchiMate model (XML):\n\n").append(modelXml).append("\n\n");
         }
-        return selectionContext + "\n\nUser request: " + prompt;
+        if (selectionContext != null && !selectionContext.isEmpty()) {
+            sb.append(selectionContext).append("\n\n");
+        }
+        sb.append("User request: ").append(prompt);
+        return sb.toString();
     }
 
     private void onStopRequest() {
@@ -179,7 +197,13 @@ public class ArchiGPTView extends ViewPart {
         } catch (Exception e) {
             // ignore; proceed without selection context
         }
-        final String userMessage = buildUserMessage(selectionContext, prompt);
+        String modelXml = "";
+        List<IArchimateModel> openModels = IEditorModelManager.INSTANCE.getModels();
+        if (!openModels.isEmpty()) {
+            modelXml = ModelContextToXml.toXml(openModels.get(0));
+        }
+        final String userMessage = buildUserMessage(selectionContext, modelXml, prompt);
+        final String suppliedModelXml = modelXml;
 
         final Text responseWidget = responseText;
         userRequestedCancel = false;
@@ -236,7 +260,10 @@ public class ArchiGPTView extends ViewPart {
                     if (parsed.getError() != null && !parsed.getError().isEmpty()) {
                         toShow = "LLM reported: " + parsed.getError() + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                     } else if (!hasImportData) {
-                        toShow = "Analysis result:\n\n" + raw;
+                        String xmlHeader = (suppliedModelXml != null && !suppliedModelXml.isEmpty())
+                                ? "Supplied model (XML):\n\n" + suppliedModelXml + "\n\n--- Analysis result ---\n\n"
+                                : "Analysis result:\n\n";
+                        toShow = xmlHeader + raw;
                     } else {
                         List<String> errors = ArchiMateSchemaValidator.validate(parsed);
                         if (!errors.isEmpty()) {

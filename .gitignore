@@ -10,3 +10,6 @@ target/
 
 # Build output
 build-output/
+
+# Local script (machine-specific paths)
+push
