@@ -72,7 +72,21 @@ public class OllamaClient {
      */
     public String generateWithSystemPrompt(String systemPrompt, String userPrompt,
             AtomicReference<HttpURLConnection> connectionHolder) throws IOException {
-        String requestBody = buildChatRequestJson(systemPrompt, userPrompt);
+        return generateWithSystemPrompt(systemPrompt, userPrompt, connectionHolder, 0);
+    }
+
+    /**
+     * Send a user prompt with a system prompt using the chat API, optionally requesting a larger context size.
+     *
+     * @param systemPrompt    system message that defines role and output format
+     * @param userPrompt      user message (e.g. prompt + model XML)
+     * @param connectionHolder optional; if non-null, the active HttpURLConnection is stored here for cancellation
+     * @param numCtx          requested context length in tokens (e.g. 8192); if &lt;= 0, Ollama default is used
+     * @return the model's response text
+     */
+    public String generateWithSystemPrompt(String systemPrompt, String userPrompt,
+            AtomicReference<HttpURLConnection> connectionHolder, int numCtx) throws IOException {
+        String requestBody = buildChatRequestJson(systemPrompt, userPrompt, numCtx);
         URL url = new URL(baseUrl + "/api/chat");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         if (connectionHolder != null) {
@@ -105,8 +119,16 @@ public class OllamaClient {
     }
 
     private String buildChatRequestJson(String systemPrompt, String userPrompt) {
+        return buildChatRequestJson(systemPrompt, userPrompt, 0);
+    }
+
+    private String buildChatRequestJson(String systemPrompt, String userPrompt, int numCtx) {
         StringBuilder sb = new StringBuilder();
-        sb.append("{\"model\":\"").append(escapeJson(model)).append("\",\"stream\":false,\"messages\":[");
+        sb.append("{\"model\":\"").append(escapeJson(model)).append("\",\"stream\":false");
+        if (numCtx > 0) {
+            sb.append(",\"options\":{\"num_ctx\":").append(numCtx).append("}");
+        }
+        sb.append(",\"messages\":[");
         sb.append("{\"role\":\"system\",\"content\":\"").append(escapeJson(systemPrompt)).append("\"},");
         sb.append("{\"role\":\"user\",\"content\":\"").append(escapeJson(userPrompt)).append("\"}");
         sb.append("]}");

@@ -5,7 +5,11 @@
 package com.archimatetool.archigpt;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import java.net.HttpURLConnection;
@@ -49,6 +53,9 @@ import org.eclipse.ui.IEditorPart;
 public class ArchiGPTView extends ViewPart {
 
     public static final String ID = "com.archimatetool.archigpt.view";
+
+    /** Max characters of model XML to send to the LLM so the request fits typical Ollama context (e.g. 4k–8k tokens). */
+    private static final int LLM_MAX_XML_CHARS = 24_000;
 
     private Text promptText;
     private Text xmlPreviewText;
@@ -189,6 +196,49 @@ public class ArchiGPTView extends ViewPart {
         }
     }
 
+    /** Collect folders to put first in the XML (selected folder or the folder containing the selected element). */
+    private static List<IFolder> getPriorityFoldersFromSelection(IStructuredSelection selection) {
+        if (selection == null || selection.isEmpty()) return new ArrayList<>();
+        Set<IFolder> seen = new LinkedHashSet<>();
+        List<IFolder> list = new ArrayList<>();
+        for (Iterator<?> it = selection.iterator(); it.hasNext(); ) {
+            Object obj = it.next();
+            if (obj instanceof IFolder) {
+                IFolder f = (IFolder) obj;
+                if (!seen.contains(f)) { seen.add(f); list.add(f); }
+            } else if (obj instanceof IArchimateConcept) {
+                Object container = ((IArchimateConcept) obj).eContainer();
+                if (container instanceof IFolder) {
+                    IFolder f = (IFolder) container;
+                    if (!seen.contains(f)) { seen.add(f); list.add(f); }
+                }
+            }
+        }
+        return list;
+    }
+
+    /** Collect diagrams to put first in the XML (selected view or views that contain the selected element). */
+    private static List<IArchimateDiagramModel> getPriorityDiagramsFromSelection(IStructuredSelection selection, IArchimateModel model) {
+        if (selection == null || selection.isEmpty() || model == null) return new ArrayList<>();
+        Set<IArchimateDiagramModel> seen = new LinkedHashSet<>();
+        List<IArchimateDiagramModel> list = new ArrayList<>();
+        for (Iterator<?> it = selection.iterator(); it.hasNext(); ) {
+            Object obj = it.next();
+            if (obj instanceof IArchimateDiagramModel) {
+                IArchimateDiagramModel dm = (IArchimateDiagramModel) obj;
+                if (model.equals(dm.getArchimateModel()) && !seen.contains(dm)) {
+                    seen.add(dm);
+                    list.add(dm);
+                }
+            } else if (obj instanceof IArchimateConcept) {
+                for (IArchimateDiagramModel dm : ModelContextToXml.getDiagramsContaining(model, (IArchimateConcept) obj)) {
+                    if (!seen.contains(dm)) { seen.add(dm); list.add(dm); }
+                }
+            }
+        }
+        return list;
+    }
+
     private static IFolder resolveTargetFolder(IStructuredSelection selection, IArchimateModel model) {
         if (selection == null || selection.isEmpty() || model == null) return null;
         Object first = selection.getFirstElement();
@@ -275,17 +325,29 @@ public class ArchiGPTView extends ViewPart {
 
         List<IArchimateModel> openModels = IEditorModelManager.INSTANCE.getModels();
         IArchimateModel model = openModels.isEmpty() ? null : openModels.get(0);
-        String modelXml = model != null ? ModelContextToXml.toXml(model) : "";
+        // Full model XML for preview (default order)
+        String modelXmlPreview = model != null ? ModelContextToXml.toXml(model) : "";
         if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
-            xmlPreviewText.setText(modelXml != null ? modelXml : "");
+            xmlPreviewText.setText(modelXmlPreview != null ? modelXmlPreview : "");
         }
+
+        // Build XML for LLM with relevant parts first (selected folder/view/element) so they fit in context
+        List<IFolder> priorityFolders = getPriorityFoldersFromSelection(selectionToUse);
+        List<IArchimateDiagramModel> priorityDiagrams = getPriorityDiagramsFromSelection(selectionToUse, model);
+        String modelXmlForRequest = model != null
+                ? ModelContextToXml.toXml(model, LLM_MAX_XML_CHARS, priorityFolders, priorityDiagrams)
+                : "";
+        int fullXmlLength = modelXmlPreview != null ? modelXmlPreview.length() : 0;
+        final int suppliedXmlLengthSent = modelXmlForRequest != null ? modelXmlForRequest.length() : 0;
+        final int suppliedXmlFullLength = fullXmlLength;
+        final boolean suppliedXmlWasTruncated = fullXmlLength > suppliedXmlLengthSent;
 
         IWorkbenchWindow window = getViewSite() != null ? getViewSite().getWorkbenchWindow() : null;
         final IFolder targetFolder = resolveTargetFolder(selectionToUse, model);
         final IArchimateDiagramModel targetDiagram = resolveTargetDiagram(selectionToUse, model, window);
 
-        final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXml, prompt);
-        final String suppliedModelXml = modelXml;
+        final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXmlForRequest, prompt);
+        final String suppliedModelXml = modelXmlForRequest;
         final String suppliedPrompt = prompt;
         final String suppliedSelectionContext = selectionContext != null && !selectionContext.isEmpty() ? selectionContext : "(none)";
 
@@ -326,7 +388,7 @@ public class ArchiGPTView extends ViewPart {
                     }
                     updateStatus("Connection OK. Sending request to Ollama. Waiting for response (this may take a minute)…");
                     try {
-                        raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, userMessage, currentConnectionRef);
+                        raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, userMessage, currentConnectionRef, 32768);
                     } catch (IOException e) {
                         if (userRequestedCancel || monitor.isCanceled()) {
                             finishRequest("Cancelled. Ollama request stopped.");
@@ -396,7 +458,11 @@ public class ArchiGPTView extends ViewPart {
                 whatWasSent.append("What was sent to the LLM:\n\n");
                 whatWasSent.append("Prompt:\n").append(suppliedPrompt != null ? suppliedPrompt : "").append("\n\n");
                 whatWasSent.append("Selection context:\n").append(suppliedSelectionContext != null ? suppliedSelectionContext : "(none)").append("\n\n");
-                whatWasSent.append("Model XML (supplied to LLM):\n\n").append(suppliedModelXml != null ? suppliedModelXml : "(none)").append("\n\n");
+                whatWasSent.append("Model XML length: ").append(suppliedXmlLengthSent).append(" characters sent to LLM");
+                if (suppliedXmlWasTruncated) {
+                    whatWasSent.append(" (full model was ").append(suppliedXmlFullLength).append(" chars; truncated for LLM context limit — increase Ollama context in Settings for more)");
+                }
+                whatWasSent.append("\n\nModel XML (supplied to LLM):\n\n").append(suppliedModelXml != null ? suppliedModelXml : "(none — no model open)").append("\n\n");
                 whatWasSent.append("---\n\n");
                 toShow = whatWasSent.toString() + (toShow != null ? toShow : "");
                 finishRequest(toShow);

@@ -5,10 +5,13 @@
 package com.archimatetool.archigpt;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.emf.ecore.EObject;
 
+import com.archimatetool.model.IArchimateConcept;
 import com.archimatetool.model.IArchimateDiagramModel;
 import com.archimatetool.model.IArchimateElement;
 import com.archimatetool.model.IArchimateModel;
@@ -43,20 +46,155 @@ public final class ModelContextToXml {
             + "http://www.opengroup.org/xsd/archimate/3.0/diagram archimate3_Diagram.xsd";
 
     public static String toXml(IArchimateModel model) {
+        return toXml(model, 0, null, null);
+    }
+
+    /**
+     * Serialize the model to XML, putting priority folders and diagrams first so they fit within the context limit.
+     *
+     * @param model            the ArchiMate model
+     * @param maxChars         max characters to emit (e.g. for LLM context); 0 = no limit, use {@value #MAX_XML_CHARS} internally
+     * @param priorityFolders  folders to serialize first (e.g. selected); null = use default order
+     * @param priorityDiagrams diagrams to serialize first (e.g. selected view); null = use default order
+     * @return XML string with relevant parts first when priority is given, truncated to maxChars when maxChars &gt; 0
+     */
+    public static String toXml(IArchimateModel model, int maxChars,
+            List<IFolder> priorityFolders, List<IArchimateDiagramModel> priorityDiagrams) {
         if (model == null) return "";
+        int effectiveMax = maxChars > 0 ? maxChars : MAX_XML_CHARS;
         StringBuilder sb = new StringBuilder();
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         sb.append("<model\n  xmlns=\"").append(NS_ARCHIMATE).append("\"\n  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n  xmlns:diagram=\"")
           .append(NS_DIAGRAM).append("\"\n  xsi:schemaLocation=\"").append(SCHEMA_LOCATION).append("\">\n");
         sb.append("  <archimateModel name=\"").append(escape(model.getName())).append("\">\n");
-        appendFolders(sb, model.getFolders(), 2);
-        List<IArchimateDiagramModel> diagrams = collectAllDiagramModels(model);
-        appendViewsAndDiagrams(sb, diagrams, 2);
+
+        List<IFolder> orderedFolders = orderFolders(model.getFolders(), priorityFolders);
+        boolean truncated = appendFoldersWithLimit(sb, orderedFolders, 2, maxChars > 0 ? effectiveMax : 0);
+        if (!truncated) {
+            List<IArchimateDiagramModel> allDiagrams = collectAllDiagramModels(model);
+            List<IArchimateDiagramModel> orderedDiagrams = orderDiagrams(allDiagrams, priorityDiagrams);
+            appendViewsAndDiagramsWithLimit(sb, orderedDiagrams, 2, maxChars > 0 ? effectiveMax : 0);
+        }
         sb.append("  </archimateModel>\n");
         sb.append("</model>");
         String out = sb.toString();
-        if (out.length() > MAX_XML_CHARS) {
+        if (maxChars <= 0 && out.length() > MAX_XML_CHARS) {
             out = out.substring(0, MAX_XML_CHARS) + "\n\n... (model truncated at " + MAX_XML_CHARS + " characters; full ArchiMate model not sent)";
+        }
+        return out;
+    }
+
+    /** Put priority items first, then the rest in original order; no duplicates. */
+    private static List<IFolder> orderFolders(List<IFolder> all, List<IFolder> priority) {
+        if (priority == null || priority.isEmpty()) return all != null ? all : new ArrayList<>();
+        Set<IFolder> seen = new LinkedHashSet<>();
+        List<IFolder> result = new ArrayList<>();
+        for (IFolder f : priority) {
+            if (f != null && !seen.contains(f)) {
+                seen.add(f);
+                result.add(f);
+            }
+        }
+        if (all != null) {
+            for (IFolder f : all) {
+                if (f != null && !seen.contains(f)) {
+                    seen.add(f);
+                    result.add(f);
+                }
+            }
+        }
+        return result;
+    }
+
+    /** Put priority diagrams first, then the rest; no duplicates. */
+    private static List<IArchimateDiagramModel> orderDiagrams(List<IArchimateDiagramModel> all, List<IArchimateDiagramModel> priority) {
+        if (priority == null || priority.isEmpty()) return all != null ? all : new ArrayList<>();
+        Set<IArchimateDiagramModel> seen = new LinkedHashSet<>();
+        List<IArchimateDiagramModel> result = new ArrayList<>();
+        for (IArchimateDiagramModel d : priority) {
+            if (d != null && !seen.contains(d)) {
+                seen.add(d);
+                result.add(d);
+            }
+        }
+        if (all != null) {
+            for (IArchimateDiagramModel d : all) {
+                if (d != null && !seen.contains(d)) {
+                    seen.add(d);
+                    result.add(d);
+                }
+            }
+        }
+        return result;
+    }
+
+    /** Append folders; when maxChars > 0, stop after a complete top-level folder if length >= maxChars. Returns true if truncated. */
+    private static boolean appendFoldersWithLimit(StringBuilder sb, List<IFolder> folders, int indent, int maxChars) {
+        if (folders == null) return false;
+        String pad = repeat("  ", indent);
+        for (IFolder folder : folders) {
+            appendOneFolder(sb, folder, indent);
+            if (maxChars > 0 && sb.length() >= maxChars) {
+                sb.append("\n  ... (truncated for context limit; selected context was sent first)\n");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void appendOneFolder(StringBuilder sb, IFolder folder, int indent) {
+        if (folder == null) return;
+        String pad = repeat("  ", indent);
+        String name = folder.getName() != null ? folder.getName() : "";
+        String typeName = folder.getType() != null ? folder.getType().getName() : "";
+        sb.append(pad).append("<folder name=\"").append(escape(name)).append("\" type=\"").append(escape(typeName)).append("\">\n");
+        for (EObject e : folder.getElements()) {
+            if (e instanceof IArchimateElement) {
+                appendElement(sb, (IArchimateElement) e, indent + 1);
+            }
+        }
+        appendFolders(sb, folder.getFolders(), indent + 1);
+        sb.append(pad).append("</folder>\n");
+    }
+
+    /** Append views/diagrams; when maxChars > 0, stop after a complete view if length >= maxChars. */
+    private static void appendViewsAndDiagramsWithLimit(StringBuilder sb, List<IArchimateDiagramModel> diagramModels, int indent, int maxChars) {
+        if (diagramModels == null || diagramModels.isEmpty()) return;
+        String pad = repeat("  ", indent);
+        sb.append(pad).append("<viewsAndDiagrams>\n");
+        for (IArchimateDiagramModel dm : diagramModels) {
+            String name = dm.getName() != null ? dm.getName() : "";
+            String viewpoint = dm.getViewpoint() != null ? dm.getViewpoint() : "";
+            sb.append(pad).append("  ").append("<view name=\"").append(escape(name)).append("\" viewpoint=\"").append(escape(viewpoint)).append("\">\n");
+            appendDiagramContent(sb, dm, indent + 2);
+            sb.append(pad).append("  ").append("</view>\n");
+            if (maxChars > 0 && sb.length() >= maxChars) {
+                sb.append(pad).append("  ... (truncated)\n");
+                break;
+            }
+        }
+        sb.append(pad).append("</viewsAndDiagrams>\n");
+    }
+
+    /**
+     * Find all diagrams in the model that contain the given concept (element or relationship).
+     * Used to put the selected element's view(s) first in the XML sent to the LLM.
+     */
+    public static List<IArchimateDiagramModel> getDiagramsContaining(IArchimateModel model, IArchimateConcept concept) {
+        if (model == null || concept == null) return new ArrayList<>();
+        List<IArchimateDiagramModel> out = new ArrayList<>();
+        List<IArchimateDiagramModel> all = collectAllDiagramModels(model);
+        for (IArchimateDiagramModel dm : all) {
+            if (dm.getChildren() == null) continue;
+            for (Object child : dm.getChildren()) {
+                if (child instanceof IDiagramModelArchimateObject) {
+                    Object el = ((IDiagramModelArchimateObject) child).getArchimateElement();
+                    if (concept.equals(el)) {
+                        out.add(dm);
+                        break;
+                    }
+                }
+            }
         }
         return out;
     }
