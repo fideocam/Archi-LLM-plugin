@@ -24,7 +24,8 @@ import com.archimatetool.model.IFolder;
 @SuppressWarnings("nls")
 public final class ModelContextToXml {
 
-    private static final int MAX_XML_CHARS = 120_000;
+    /** Max characters for serialized model XML (avoids token limits). Increase if you need the full model; truncation message is appended when hit. */
+    private static final int MAX_XML_CHARS = 500_000;
 
     private ModelContextToXml() {}
 
@@ -55,7 +56,7 @@ public final class ModelContextToXml {
         sb.append("</model>");
         String out = sb.toString();
         if (out.length() > MAX_XML_CHARS) {
-            out = out.substring(0, MAX_XML_CHARS) + "\n\n... (model truncated)";
+            out = out.substring(0, MAX_XML_CHARS) + "\n\n... (model truncated at " + MAX_XML_CHARS + " characters; full ArchiMate model not sent)";
         }
         return out;
     }

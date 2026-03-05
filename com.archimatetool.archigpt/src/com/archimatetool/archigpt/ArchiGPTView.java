@@ -286,6 +286,8 @@ public class ArchiGPTView extends ViewPart {
 
         final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXml, prompt);
         final String suppliedModelXml = modelXml;
+        final String suppliedPrompt = prompt;
+        final String suppliedSelectionContext = selectionContext != null && !selectionContext.isEmpty() ? selectionContext : "(none)";
 
         final Text responseWidget = responseText;
         userRequestedCancel = false;
@@ -366,6 +368,10 @@ public class ArchiGPTView extends ViewPart {
                                         if (where.length() > 0) where.append(" and");
                                         where.append(" added to view \"").append(targetDiagram.getName()).append("\"");
                                     }
+                                    if (resultToImport.getDiagram() != null && resultToImport.getDiagram().getName() != null) {
+                                        if (where.length() > 0) where.append(".");
+                                        where.append(" Created new view \"").append(resultToImport.getDiagram().getName()).append("\"");
+                                    }
                                     if (where.length() > 0) where.insert(0, " ");
                                     importMessage[0] = "Imported into model \"" + model.getName() + "\"" + where + ": " + resultToImport.getElements().size() + " elements, " + resultToImport.getRelationships().size() + " relationships.";
                                 }
@@ -386,9 +392,13 @@ public class ArchiGPTView extends ViewPart {
                     toShow = "Error while parsing or importing: " + t.getMessage()
                             + (raw != null ? "\n\nRaw LLM response:\n" + truncate(raw, 4000) : "");
                 }
-                if (suppliedModelXml != null && !suppliedModelXml.isEmpty() && toShow != null && !toShow.isEmpty()) {
-                    toShow = "Raw ArchiMate model (XML) sent to LLM:\n\n" + suppliedModelXml + "\n\n---\n\n" + toShow;
-                }
+                StringBuilder whatWasSent = new StringBuilder();
+                whatWasSent.append("What was sent to the LLM:\n\n");
+                whatWasSent.append("Prompt:\n").append(suppliedPrompt != null ? suppliedPrompt : "").append("\n\n");
+                whatWasSent.append("Selection context:\n").append(suppliedSelectionContext != null ? suppliedSelectionContext : "(none)").append("\n\n");
+                whatWasSent.append("Model XML (supplied to LLM):\n\n").append(suppliedModelXml != null ? suppliedModelXml : "(none)").append("\n\n");
+                whatWasSent.append("---\n\n");
+                toShow = whatWasSent.toString() + (toShow != null ? toShow : "");
                 finishRequest(toShow);
                 return Status.OK_STATUS;
             }

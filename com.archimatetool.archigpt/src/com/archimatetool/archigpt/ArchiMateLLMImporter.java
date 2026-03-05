@@ -150,16 +150,24 @@ public final class ArchiMateLLMImporter {
             java.lang.reflect.Method getConn = diagram.getClass().getMethod("getConnections");
             java.util.List<IDiagramModelConnection> list = (java.util.List<IDiagramModelConnection>) getConn.invoke(diagram);
             if (list != null) list.add(conn);
+            return;
         } catch (Exception e) {
+            // fallback
+        }
+        try {
+            Object src = conn.getSource();
+            if (src != null) {
+                java.lang.reflect.Method getOut = src.getClass().getMethod("getSourceConnections");
+                @SuppressWarnings("unchecked")
+                java.util.List<IDiagramModelConnection> list = (java.util.List<IDiagramModelConnection>) getOut.invoke(src);
+                if (list != null) list.add(conn);
+            }
+        } catch (Exception e2) {
             try {
-                Object src = conn.getSource();
-                if (src != null) {
-                    java.lang.reflect.Method getOut = src.getClass().getMethod("getSourceConnections");
-                    @SuppressWarnings("unchecked")
-                    java.util.List<Object> list = (java.util.List<Object>) getOut.invoke(src);
-                    if (list != null) list.add(conn);
-                }
-            } catch (Exception e2) {
+                @SuppressWarnings("rawtypes")
+                java.util.List children = diagram.getChildren();
+                if (children != null) children.add(conn);
+            } catch (Exception e3) {
                 // skip connection
             }
         }
