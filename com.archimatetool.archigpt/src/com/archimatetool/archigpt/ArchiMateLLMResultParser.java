@@ -54,7 +54,91 @@ public final class ArchiMateLLMResultParser {
             }
         }
 
+        int diagramStart = json.indexOf("\"diagram\"");
+        if (diagramStart >= 0) {
+            int objStart = json.indexOf("{", diagramStart);
+            int objEnd = findMatchingBracket(json, objStart);
+            if (objEnd > objStart) {
+                String diagramStr = json.substring(objStart, objEnd + 1);
+                parseDiagram(diagramStr, result);
+            }
+        }
+
         return result;
+    }
+
+    private static void parseDiagram(String diagramStr, ArchiMateLLMResult result) {
+        ArchiMateLLMResult.DiagramSpec diagram = new ArchiMateLLMResult.DiagramSpec();
+        Pattern nameP = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]*)\"");
+        Pattern viewpointP = Pattern.compile("\"viewpoint\"\\s*:\\s*\"([^\"]*)\"");
+        Matcher nameM = nameP.matcher(diagramStr);
+        if (nameM.find()) diagram.setName(unescapeJson(nameM.group(1).trim()));
+        Matcher vpM = viewpointP.matcher(diagramStr);
+        if (vpM.find()) diagram.setViewpoint(unescapeJson(vpM.group(1).trim()));
+
+        int nodesStart = diagramStr.indexOf("\"nodes\"");
+        if (nodesStart >= 0) {
+            int arrayStart = diagramStr.indexOf("[", nodesStart);
+            int arrayEnd = findMatchingBracket(diagramStr, arrayStart);
+            if (arrayEnd > arrayStart) {
+                String nodesStr = diagramStr.substring(arrayStart + 1, arrayEnd);
+                for (int[] r : findObjectRanges(nodesStr)) {
+                    String block = nodesStr.substring(r[0], r[1]);
+                    ArchiMateLLMResult.DiagramNodeSpec node = parseDiagramNode(block);
+                    if (node != null && node.getElementId() != null) diagram.getNodes().add(node);
+                }
+            }
+        }
+
+        int connStart = diagramStr.indexOf("\"connections\"");
+        if (connStart >= 0) {
+            int arrayStart = diagramStr.indexOf("[", connStart);
+            int arrayEnd = findMatchingBracket(diagramStr, arrayStart);
+            if (arrayEnd > arrayStart) {
+                String connStr = diagramStr.substring(arrayStart + 1, arrayEnd);
+                for (int[] r : findObjectRanges(connStr)) {
+                    String block = connStr.substring(r[0], r[1]);
+                    ArchiMateLLMResult.DiagramConnectionSpec conn = parseDiagramConnection(block);
+                    if (conn != null) diagram.getConnections().add(conn);
+                }
+            }
+        }
+
+        result.setDiagram(diagram);
+    }
+
+    private static ArchiMateLLMResult.DiagramNodeSpec parseDiagramNode(String block) {
+        Pattern p = Pattern.compile("\"elementId\"\\s*:\\s*\"([^\"]*)\"");
+        Matcher m = p.matcher(block);
+        if (!m.find()) return null;
+        ArchiMateLLMResult.DiagramNodeSpec node = new ArchiMateLLMResult.DiagramNodeSpec();
+        node.setElementId(m.group(1).trim());
+        node.setX(parseInt(block, "x", 0));
+        node.setY(parseInt(block, "y", 0));
+        node.setWidth(parseInt(block, "width", 120));
+        node.setHeight(parseInt(block, "height", 55));
+        return node;
+    }
+
+    private static ArchiMateLLMResult.DiagramConnectionSpec parseDiagramConnection(String block) {
+        Pattern src = Pattern.compile("\"sourceElementId\"\\s*:\\s*\"([^\"]*)\"");
+        Pattern tgt = Pattern.compile("\"targetElementId\"\\s*:\\s*\"([^\"]*)\"");
+        Pattern rel = Pattern.compile("\"relationshipId\"\\s*:\\s*\"([^\"]*)\"");
+        Matcher srcM = src.matcher(block);
+        Matcher tgtM = tgt.matcher(block);
+        if (!srcM.find() || !tgtM.find()) return null;
+        ArchiMateLLMResult.DiagramConnectionSpec c = new ArchiMateLLMResult.DiagramConnectionSpec();
+        c.setSourceElementId(srcM.group(1).trim());
+        c.setTargetElementId(tgtM.group(1).trim());
+        Matcher relM = rel.matcher(block);
+        if (relM.find()) c.setRelationshipId(relM.group(1).trim());
+        return c;
+    }
+
+    private static int parseInt(String block, String key, int defaultValue) {
+        Pattern p = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+)");
+        Matcher m = p.matcher(block);
+        return m.find() ? Integer.parseInt(m.group(1).trim()) : defaultValue;
     }
 
     private static String extractJson(String raw) {

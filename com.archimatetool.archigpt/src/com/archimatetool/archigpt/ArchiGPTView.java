@@ -189,18 +189,6 @@ public class ArchiGPTView extends ViewPart {
         }
     }
 
-    private static String buildUserMessage(String selectionContext, String modelXml, String prompt) {
-        StringBuilder sb = new StringBuilder();
-        if (modelXml != null && !modelXml.isEmpty()) {
-            sb.append("Supplied ArchiMate model (XML):\n\n").append(modelXml).append("\n\n");
-        }
-        if (selectionContext != null && !selectionContext.isEmpty()) {
-            sb.append(selectionContext).append("\n\n");
-        }
-        sb.append("User request: ").append(prompt);
-        return sb.toString();
-    }
-
     private static IFolder resolveTargetFolder(IStructuredSelection selection, IArchimateModel model) {
         if (selection == null || selection.isEmpty() || model == null) return null;
         Object first = selection.getFirstElement();
@@ -296,7 +284,7 @@ public class ArchiGPTView extends ViewPart {
         final IFolder targetFolder = resolveTargetFolder(selectionToUse, model);
         final IArchimateDiagramModel targetDiagram = resolveTargetDiagram(selectionToUse, model, window);
 
-        final String userMessage = buildUserMessage(selectionContext, modelXml, prompt);
+        final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXml, prompt);
         final String suppliedModelXml = modelXml;
 
         final Text responseWidget = responseText;

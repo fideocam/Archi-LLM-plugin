@@ -99,7 +99,7 @@ public class ModelContextToXmlTest {
         folders.add(folder);
         Object packageInst = Class.forName("com.archimatetool.model.IArchimatePackage").getField("eINSTANCE").get(null);
         Object businessActorClass = packageInst.getClass().getMethod("getBusinessActor").invoke(packageInst);
-        Object actor = factoryClass.getMethod("create", org.eclipse.emf.ecore.EClass.class).invoke(factory, businessActorClass);
+        Object actor = factoryClass.getMethod("create", Class.forName("org.eclipse.emf.ecore.EClass")).invoke(factory, businessActorClass);
         actor.getClass().getMethod("setName", String.class).invoke(actor, elementName);
         actor.getClass().getMethod("setId", String.class).invoke(actor, elementId);
         @SuppressWarnings("unchecked")

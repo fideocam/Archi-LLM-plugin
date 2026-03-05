@@ -17,6 +17,7 @@ import com.archimatetool.model.IArchimateModel;
 import com.archimatetool.model.IArchimatePackage;
 import com.archimatetool.model.IArchimateRelationship;
 import com.archimatetool.model.IDiagramModelArchimateObject;
+import com.archimatetool.model.IDiagramModelConnection;
 import com.archimatetool.model.IFolder;
 
 /**
@@ -49,6 +50,7 @@ public final class ArchiMateLLMImporter {
      */
     public static void importIntoModel(ArchiMateLLMResult result, IArchimateModel model, IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
         Map<String, IArchimateConcept> idToConcept = new HashMap<>();
+        Map<String, IArchimateRelationship> idToRelationship = new HashMap<>();
 
         int diagramY = 50;
         final int elementWidth = 120;
@@ -71,7 +73,7 @@ public final class ArchiMateLLMImporter {
             folder.getElements().add(element);
             idToConcept.put(e.getId(), element);
 
-            if (targetDiagram != null) {
+            if (targetDiagram != null && result.getDiagram() == null) {
                 IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
                 dmo.setArchimateElement(element);
                 dmo.setBounds(50, diagramY, elementWidth, elementHeight);
@@ -94,11 +96,64 @@ public final class ArchiMateLLMImporter {
             rel.setName(r.getName() != null ? r.getName() : "");
             if (r.getId() != null && !r.getId().isEmpty()) {
                 rel.setId(r.getId());
+                idToRelationship.put(r.getId(), rel);
             }
             rel.setSource(source);
             rel.setTarget(target);
             IFolder folder = targetFolder != null ? targetFolder : model.getDefaultFolderForObject(rel);
             folder.getElements().add(rel);
+        }
+
+        if (result.getDiagram() != null && result.getDiagram().getName() != null && !result.getDiagram().getName().isEmpty()) {
+            createNewDiagram(result.getDiagram(), model, idToConcept, idToRelationship);
+        }
+    }
+
+    private static void createNewDiagram(ArchiMateLLMResult.DiagramSpec spec, IArchimateModel model,
+            Map<String, IArchimateConcept> idToConcept, Map<String, IArchimateRelationship> idToRelationship) {
+        IArchimateDiagramModel diagram = IArchimateFactory.eINSTANCE.createArchimateDiagramModel();
+        diagram.setName(spec.getName());
+        if (spec.getViewpoint() != null && !spec.getViewpoint().isEmpty()) {
+            diagram.setViewpoint(spec.getViewpoint());
+        }
+        diagram.setArchimateModel(model);
+        model.getDiagramModels().add(diagram);
+
+        Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
+        for (ArchiMateLLMResult.DiagramNodeSpec node : spec.getNodes()) {
+            IArchimateConcept concept = idToConcept.get(node.getElementId());
+            if (!(concept instanceof IArchimateElement)) continue;
+            IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
+            dmo.setArchimateElement((IArchimateElement) concept);
+            dmo.setBounds(node.getX(), node.getY(), node.getWidth(), node.getHeight());
+            diagram.getChildren().add(dmo);
+            elementIdToDiagramObject.put(node.getElementId(), dmo);
+        }
+
+        for (ArchiMateLLMResult.DiagramConnectionSpec connSpec : spec.getConnections()) {
+            IDiagramModelArchimateObject sourceDmo = elementIdToDiagramObject.get(connSpec.getSourceElementId());
+            IDiagramModelArchimateObject targetDmo = elementIdToDiagramObject.get(connSpec.getTargetElementId());
+            if (sourceDmo == null || targetDmo == null) continue;
+            IDiagramModelConnection conn = IArchimateFactory.eINSTANCE.createDiagramModelConnection();
+            conn.setSource(sourceDmo);
+            conn.setTarget(targetDmo);
+            if (connSpec.getRelationshipId() != null && !connSpec.getRelationshipId().isEmpty()) {
+                IArchimateRelationship rel = idToRelationship.get(connSpec.getRelationshipId());
+                if (rel != null) setConnectionRelationship(conn, rel);
+            }
+            diagram.getChildren().add(conn);
+        }
+    }
+
+    private static void setConnectionRelationship(IDiagramModelConnection conn, IArchimateRelationship rel) {
+        try {
+            conn.getClass().getMethod("setRelationship", IArchimateRelationship.class).invoke(conn, rel);
+        } catch (Exception e1) {
+            try {
+                conn.getClass().getMethod("setArchimateRelationship", IArchimateRelationship.class).invoke(conn, rel);
+            } catch (Exception e2) {
+                // API may use different method name
+            }
         }
     }
 
