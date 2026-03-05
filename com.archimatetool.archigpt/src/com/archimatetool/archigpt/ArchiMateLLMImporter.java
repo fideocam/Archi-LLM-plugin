@@ -116,7 +116,6 @@ public final class ArchiMateLLMImporter {
         if (spec.getViewpoint() != null && !spec.getViewpoint().isEmpty()) {
             diagram.setViewpoint(spec.getViewpoint());
         }
-        diagram.setArchimateModel(model);
         model.getDiagramModels().add(diagram);
 
         Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
@@ -141,7 +140,28 @@ public final class ArchiMateLLMImporter {
                 IArchimateRelationship rel = idToRelationship.get(connSpec.getRelationshipId());
                 if (rel != null) setConnectionRelationship(conn, rel);
             }
-            diagram.getChildren().add(conn);
+            addConnectionToDiagram(diagram, conn);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void addConnectionToDiagram(IArchimateDiagramModel diagram, IDiagramModelConnection conn) {
+        try {
+            java.lang.reflect.Method getConn = diagram.getClass().getMethod("getConnections");
+            java.util.List<IDiagramModelConnection> list = (java.util.List<IDiagramModelConnection>) getConn.invoke(diagram);
+            if (list != null) list.add(conn);
+        } catch (Exception e) {
+            try {
+                Object src = conn.getSource();
+                if (src != null) {
+                    java.lang.reflect.Method getOut = src.getClass().getMethod("getSourceConnections");
+                    @SuppressWarnings("unchecked")
+                    java.util.List<Object> list = (java.util.List<Object>) getOut.invoke(src);
+                    if (list != null) list.add(conn);
+                }
+            } catch (Exception e2) {
+                // skip connection
+            }
         }
     }
 
