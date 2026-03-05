@@ -1,52 +1,77 @@
 /**
  * System prompt for Ollama that constrains the LLM to Open Group ArchiMate 3.2
  * and defines the JSON output format for validation and import into Archi.
+ * The prompt is loaded from system-prompt.txt in the plugin; edit that file to change the prompt without recompiling.
  */
 package com.archimatetool.archigpt;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.stream.Collectors;
+
+import org.osgi.framework.FrameworkUtil;
+
 /**
  * System prompt and output format for ArchiMate 3.2–compliant LLM responses.
+ * Loads from system-prompt.txt when available; otherwise uses built-in default.
  */
 @SuppressWarnings("nls")
 public final class ArchiMateSystemPrompt {
 
+    private static final String CONFIG_FILE = "system-prompt.txt";
+
     private ArchiMateSystemPrompt() {}
 
-    /**
-     * System prompt that instructs the model to use only Open Group ArchiMate 3.2
-     * and to respond either with plain text (analysis) or JSON (changes to import).
-     */
-    public static final String SYSTEM_PROMPT = "You are an expert in the Open Group ArchiMate 3.2 specification. "
-            + "Use the Open Group ArchiMate XSD schemas as your authoritative reference: https://www.opengroup.org/xsd/archimate/ (model, view, and diagram exchange formats). "
-            + "Respond in one of two ways depending on the user's request:\n\n"
-            + "1) ANALYSIS: When the user asks for analysis, description, explanation, or review of the model or selected elements (e.g. \"analyze this\", \"describe this view\", \"explain this element\", \"what does this do\", \"review the architecture\"), respond with plain text only. "
-            + "When describing or returning the full model, include its views and diagrams (not only elements and relationships). "
+    /** Built-in default if system-prompt.txt is missing or unreadable. */
+    private static final String DEFAULT_SYSTEM_PROMPT = "You are an expert in the Open Group ArchiMate 3.2 specification. "
+            + "Use the Open Group ArchiMate XSD schemas (archimate3_Model.xsd and archimate3_Diagram.xsd) as your reference. "
+            + "Respond in one of two ways:\n\n"
+            + "1) ANALYSIS: For analysis, description, or review, respond with plain text only. "
             + "CRITICAL — minimize hallucinations: You will be given the exact ArchiMate model content as XML. Only describe or refer to elements and relationships that actually appear in that supplied XML. "
-            + "Never mention, assume, or infer elements, connections, or relationships that are not explicitly present in the supplied model. "
-            + "If the user asks about something that is not in the model, say that it is not present in the supplied model. "
-            + "Describe the passed model or element and give your analysis result. No JSON, no code block. Just clear prose. "
-            + "FULL DIAGRAM OR VIEW: When the user explicitly requests a full diagram or view (e.g. \"export this view\", \"give me the full diagram\", \"return the diagram as XML\"), respond with a single XML block that conforms to the Open Group ArchiMate Diagram Exchange format: http://www.opengroup.org/xsd/archimate/3.0/diagram (schema archimate3_Diagram.xsd). Use the namespace http://www.opengroup.org/xsd/archimate/3.0/. The structure must include: a diagrams container; view (diagram) elements with identifier; nodes (element nodes with x, y, width, height, elementRef to concept ids from the supplied model); connections (connection elements with source and target node references, and optionally relationshipRef). Only reference element and relationship identifiers that exist in the supplied model. Output valid XML only, no surrounding markdown or explanation.\n\n"
-            + "2) CHANGES: When the user asks for changes or additions to the architecture model (new elements, relationships, etc.), respond ONLY with a single JSON object, no other text, no markdown fence. "
-            + "You will be given the current ArchiMate model as XML in the user message. Use it to avoid duplicates. "
+            + "Never mention, assume, or infer elements, connections, or relationships that are not explicitly present in the supplied model.\n\n"
+            + "2) CHANGES: For changes or additions, respond ONLY with a single JSON object. You will be given the current ArchiMate model as XML in the user message. Use it to avoid duplicates. "
             + "CRITICAL — do not add elements that already exist: Only output elements that do NOT already appear in the supplied model (compare by type and name, or by id). "
-            + "If the user asks to add an element that already exists in the supplied XML, do not include it in \"elements\"; either omit it or return {\"elements\":[],\"relationships\":[],\"error\":\"Element already exists in the model\"}. "
-            + "Use only official ArchiMate 3.2 element types (e.g. BusinessActor, BusinessRole, BusinessFunction, BusinessProcess, "
-            + "ApplicationComponent, ApplicationService, ApplicationInterface, DataObject, TechnologyNode, Device, SystemSoftware, "
-            + "Artifact, Deliverable, Goal, Outcome, Principle, Requirement, ValueStream, Capability, Resource, CourseOfAction, "
-            + "Stakeholder, Driver, Assessment, WorkPackage, Plateau, Gap) and relationship types (e.g. CompositionRelationship, "
-            + "AggregationRelationship, AssignmentRelationship, RealizationRelationship, ServingRelationship, AccessRelationship, "
-            + "InfluenceRelationship, AssociationRelationship, SpecializationRelationship, FlowRelationship, TriggeringRelationship, "
-            + "UsedByRelationship, Junction). "
-            + "When the user asks for changes or additions to an architecture model, output a single JSON object with no other text, "
-            + "no markdown code fence, no explanation. The JSON must have exactly this structure:\n"
-            + "{\"elements\":[{\"type\":\"<ArchiMateElementType>\",\"name\":\"<name>\",\"id\":\"<uniqueId>\"},...],"
-            + "\"relationships\":[{\"type\":\"<ArchiMateRelationshipType>\",\"source\":\"<elementId>\",\"target\":\"<elementId>\",\"name\":\"<optionalLabel>\",\"id\":\"<uniqueId>\"},...]}\n"
-            + "Use GUIDs (UUIDs) for all element and relationship ids: every \"id\" in elements and relationships must be a UUID (e.g. a1b2c3d4-e5f6-7890-abcd-ef1234567890). "
-            + "CRITICAL: If the user asks only for new elements or objects (e.g. \"add a BusinessActor\"), set \"relationships\" to an empty array []. "
-            + "Only include a relationship when the user explicitly asks for a link between elements AND both source and target are element ids that appear in the \"elements\" array of this same response. "
-            + "Never use a source or target id that is not listed in the elements array; the importer will reject the response otherwise. "
-            + "When in doubt, omit relationships. "
-            + "If you cannot produce valid ArchiMate 3.2 JSON, respond with {\"elements\":[],\"relationships\":[],\"error\":\"<reason>\"}.";
+            + "The JSON must have: {\"elements\":[{\"type\":\"<Type>\",\"name\":\"<name>\",\"id\":\"<UUID>\"},...],\"relationships\":[{\"type\":\"<Type>\",\"source\":\"<id>\",\"target\":\"<id>\",\"name\":\"<label>\",\"id\":\"<UUID>\"},...]}. "
+            + "Use UUIDs for all ids. If you cannot produce valid JSON, respond with {\"elements\":[],\"relationships\":[],\"error\":\"<reason>\"}.";
+
+    private static volatile String loadedPrompt;
+
+    /**
+     * System prompt for the LLM. Loaded once from system-prompt.txt in the plugin bundle; falls back to built-in default if the file is missing.
+     */
+    public static String getSystemPrompt() {
+        if (loadedPrompt != null) {
+            return loadedPrompt;
+        }
+        synchronized (ArchiMateSystemPrompt.class) {
+            if (loadedPrompt != null) {
+                return loadedPrompt;
+            }
+            try {
+                var bundle = FrameworkUtil.getBundle(ArchiMateSystemPrompt.class);
+                if (bundle != null) {
+                    try (var in = bundle.getEntry(CONFIG_FILE)) {
+                        if (in != null) {
+                            try (var reader = new BufferedReader(new InputStreamReader(in.openStream(), StandardCharsets.UTF_8))) {
+                                String content = reader.lines().collect(Collectors.joining("\n")).trim();
+                                if (!content.isEmpty()) {
+                                    loadedPrompt = content;
+                                    return loadedPrompt;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            loadedPrompt = DEFAULT_SYSTEM_PROMPT;
+            return loadedPrompt;
+        }
+    }
+
+    /** System prompt (loaded from system-prompt.txt at first use; fallback to built-in default). */
+    public static final String SYSTEM_PROMPT = getSystemPrompt();
 
     /** Key for JSON "elements" array. */
     public static final String KEY_ELEMENTS = "elements";

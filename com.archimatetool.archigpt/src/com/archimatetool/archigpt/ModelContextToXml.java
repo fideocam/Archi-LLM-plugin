@@ -4,6 +4,9 @@
  */
 package com.archimatetool.archigpt;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.emf.ecore.EObject;
 
 import com.archimatetool.model.IArchimateDiagramModel;
@@ -11,10 +14,11 @@ import com.archimatetool.model.IArchimateElement;
 import com.archimatetool.model.IArchimateModel;
 import com.archimatetool.model.IArchimateRelationship;
 import com.archimatetool.model.IDiagramModel;
+import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IFolder;
 
 /**
- * Builds a simple XML dump of the model structure (elements and relationships)
+ * Builds a simple XML dump of the model structure (elements, relationships, and diagrams with their content)
  * so the LLM receives exact model content and we can show it in the response.
  */
 @SuppressWarnings("nls")
@@ -26,21 +30,52 @@ public final class ModelContextToXml {
 
     /**
      * Serialize the given model to a compact XML string suitable for the LLM and for display.
+     * Includes folders (elements/relationships), and all diagram/view content (nodes and connections on each diagram).
      * Truncates if over {@value #MAX_XML_CHARS} characters to avoid token limits.
      */
+    /** Open Group ArchiMate 3.0 model namespace (valid Open Exchange document). */
+    public static final String NS_ARCHIMATE = "http://www.opengroup.org/xsd/archimate/3.0/";
+    /** Open Group ArchiMate 3.0 diagram namespace. */
+    public static final String NS_DIAGRAM = "http://www.opengroup.org/xsd/archimate/3.0/diagram";
+    /** Schema location for model and diagram (LLM should use both). */
+    public static final String SCHEMA_LOCATION = "http://www.opengroup.org/xsd/archimate/3.0/ archimate3_Model.xsd "
+            + "http://www.opengroup.org/xsd/archimate/3.0/diagram archimate3_Diagram.xsd";
+
     public static String toXml(IArchimateModel model) {
         if (model == null) return "";
         StringBuilder sb = new StringBuilder();
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        sb.append("<archimateModel name=\"").append(escape(model.getName())).append("\">\n");
-        appendFolders(sb, model.getFolders(), 1);
-        appendViewsAndDiagrams(sb, model.getDiagramModels(), 1);
-        sb.append("</archimateModel>");
+        sb.append("<model\n  xmlns=\"").append(NS_ARCHIMATE).append("\"\n  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n  xmlns:diagram=\"")
+          .append(NS_DIAGRAM).append("\"\n  xsi:schemaLocation=\"").append(SCHEMA_LOCATION).append("\">\n");
+        sb.append("  <archimateModel name=\"").append(escape(model.getName())).append("\">\n");
+        appendFolders(sb, model.getFolders(), 2);
+        List<IArchimateDiagramModel> diagrams = collectAllDiagramModels(model);
+        appendViewsAndDiagrams(sb, diagrams, 2);
+        sb.append("  </archimateModel>\n");
+        sb.append("</model>");
         String out = sb.toString();
         if (out.length() > MAX_XML_CHARS) {
             out = out.substring(0, MAX_XML_CHARS) + "\n\n... (model truncated)";
         }
         return out;
+    }
+
+    /** Collect all ArchiMate diagram models from the model (getDiagramModels + any found via eAllContents). */
+    private static List<IArchimateDiagramModel> collectAllDiagramModels(IArchimateModel model) {
+        List<IArchimateDiagramModel> list = new ArrayList<>();
+        if (model.getDiagramModels() != null) {
+            for (IDiagramModel dm : model.getDiagramModels()) {
+                if (dm instanceof IArchimateDiagramModel) {
+                    list.add((IArchimateDiagramModel) dm);
+                }
+            }
+        }
+        for (EObject e : model.eAllContents()) {
+            if (e instanceof IArchimateDiagramModel && !list.contains(e)) {
+                list.add((IArchimateDiagramModel) e);
+            }
+        }
+        return list;
     }
 
     private static void appendFolders(StringBuilder sb, java.util.List<IFolder> folders, int indent) {
@@ -60,20 +95,60 @@ public final class ModelContextToXml {
         }
     }
 
-    private static void appendViewsAndDiagrams(StringBuilder sb, java.util.List<IDiagramModel> diagramModels, int indent) {
+    private static void appendViewsAndDiagrams(StringBuilder sb, List<IArchimateDiagramModel> diagramModels, int indent) {
         if (diagramModels == null || diagramModels.isEmpty()) return;
         String pad = repeat("  ", indent);
         sb.append(pad).append("<viewsAndDiagrams>\n");
-        for (IDiagramModel dm : diagramModels) {
+        for (IArchimateDiagramModel dm : diagramModels) {
             String name = dm.getName() != null ? dm.getName() : "";
-            if (dm instanceof IArchimateDiagramModel) {
-                String viewpoint = ((IArchimateDiagramModel) dm).getViewpoint() != null ? ((IArchimateDiagramModel) dm).getViewpoint() : "";
-                sb.append(pad).append("  ").append("<view name=\"").append(escape(name)).append("\" viewpoint=\"").append(escape(viewpoint)).append("\"/>\n");
-            } else {
-                sb.append(pad).append("  ").append("<diagram name=\"").append(escape(name)).append("\"/>\n");
-            }
+            String viewpoint = dm.getViewpoint() != null ? dm.getViewpoint() : "";
+            sb.append(pad).append("  ").append("<view name=\"").append(escape(name)).append("\" viewpoint=\"").append(escape(viewpoint)).append("\">\n");
+            appendDiagramContent(sb, dm, indent + 2);
+            sb.append(pad).append("  ").append("</view>\n");
         }
         sb.append(pad).append("</viewsAndDiagrams>\n");
+    }
+
+    /** Serialize diagram content: nodes (element refs, bounds) and connections (source, target, relationship). */
+    private static void appendDiagramContent(StringBuilder sb, IArchimateDiagramModel diagram, int indent) {
+        if (diagram == null || diagram.getChildren() == null) return;
+        String pad = repeat("  ", indent);
+        for (Object child : diagram.getChildren()) {
+            if (child instanceof IDiagramModelArchimateObject) {
+                IDiagramModelArchimateObject dmo = (IDiagramModelArchimateObject) child;
+                IArchimateElement el = dmo.getArchimateElement();
+                String elId = el != null && el.getId() != null ? el.getId() : "";
+                String elName = el != null && el.getName() != null ? el.getName() : "";
+                int x = 0, y = 0, w = 120, h = 55;
+                try {
+                    Object bounds = dmo.getBounds();
+                    if (bounds != null) {
+                        x = safeInt(bounds, "getX", 0);
+                        y = safeInt(bounds, "getY", 0);
+                        w = safeInt(bounds, "getWidth", 120);
+                        h = safeInt(bounds, "getHeight", 55);
+                    }
+                } catch (Exception ignored) {
+                }
+                sb.append(pad).append("<node elementRef=\"").append(escape(elId)).append("\" name=\"").append(escape(elName))
+                  .append("\" x=\"").append(x).append("\" y=\"").append(y).append("\" width=\"").append(w).append("\" height=\"").append(h).append("\"/>\n");
+            } else if (child instanceof com.archimatetool.model.IDiagramModelConnection) {
+                com.archimatetool.model.IDiagramModelConnection conn = (com.archimatetool.model.IDiagramModelConnection) child;
+                String srcId = conn.getSource() != null ? getDiagramObjectId(conn.getSource()) : "";
+                String tgtId = conn.getTarget() != null ? getDiagramObjectId(conn.getTarget()) : "";
+                String relId = conn.getRelationship() != null && conn.getRelationship().getId() != null ? conn.getRelationship().getId() : "";
+                sb.append(pad).append("<connection source=\"").append(escape(srcId)).append("\" target=\"").append(escape(tgtId))
+                  .append("\" relationshipRef=\"").append(escape(relId)).append("\"/>\n");
+            }
+        }
+    }
+
+    private static String getDiagramObjectId(Object diagramObject) {
+        if (diagramObject instanceof IDiagramModelArchimateObject) {
+            IArchimateElement el = ((IDiagramModelArchimateObject) diagramObject).getArchimateElement();
+            return el != null && el.getId() != null ? el.getId() : "";
+        }
+        return "";
     }
 
     private static void appendElement(StringBuilder sb, IArchimateElement element, int indent) {
@@ -106,5 +181,15 @@ public final class ModelContextToXml {
         StringBuilder b = new StringBuilder();
         for (int i = 0; i < n; i++) b.append(s);
         return b.toString();
+    }
+
+    private static int safeInt(Object obj, String getterName, int defaultValue) {
+        if (obj == null) return defaultValue;
+        try {
+            Object v = obj.getClass().getMethod(getterName).invoke(obj);
+            if (v instanceof Number) return ((Number) v).intValue();
+        } catch (Exception ignored) {
+        }
+        return defaultValue;
     }
 }
