@@ -6,10 +6,13 @@
 package com.archimatetool.archigpt;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.stream.Collectors;
 
+import org.osgi.framework.Bundle;
 import org.osgi.framework.FrameworkUtil;
 
 /**
@@ -49,17 +52,24 @@ public final class ArchiMateSystemPrompt {
                 return loadedPrompt;
             }
             try {
-                var bundle = FrameworkUtil.getBundle(ArchiMateSystemPrompt.class);
+                Bundle bundle = FrameworkUtil.getBundle(ArchiMateSystemPrompt.class);
                 if (bundle != null) {
-                    try (var in = bundle.getEntry(CONFIG_FILE)) {
-                        if (in != null) {
-                            try (var reader = new BufferedReader(new InputStreamReader(in.openStream(), StandardCharsets.UTF_8))) {
+                    URL in = bundle.getEntry(CONFIG_FILE);
+                    if (in != null) {
+                        InputStream is = in.openStream();
+                        try {
+                            BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                            try {
                                 String content = reader.lines().collect(Collectors.joining("\n")).trim();
                                 if (!content.isEmpty()) {
                                     loadedPrompt = content;
                                     return loadedPrompt;
                                 }
+                            } finally {
+                                reader.close();
                             }
+                        } finally {
+                            is.close();
                         }
                     }
                 }

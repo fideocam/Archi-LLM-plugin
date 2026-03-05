@@ -70,7 +70,9 @@ public final class ModelContextToXml {
                 }
             }
         }
-        for (EObject e : model.eAllContents()) {
+        java.util.Iterator<EObject> it = model.eAllContents();
+        while (it.hasNext()) {
+            EObject e = it.next();
             if (e instanceof IArchimateDiagramModel && !list.contains(e)) {
                 list.add((IArchimateDiagramModel) e);
             }
@@ -136,7 +138,7 @@ public final class ModelContextToXml {
                 com.archimatetool.model.IDiagramModelConnection conn = (com.archimatetool.model.IDiagramModelConnection) child;
                 String srcId = conn.getSource() != null ? getDiagramObjectId(conn.getSource()) : "";
                 String tgtId = conn.getTarget() != null ? getDiagramObjectId(conn.getTarget()) : "";
-                String relId = conn.getRelationship() != null && conn.getRelationship().getId() != null ? conn.getRelationship().getId() : "";
+                String relId = getConnectionRelationshipId(conn);
                 sb.append(pad).append("<connection source=\"").append(escape(srcId)).append("\" target=\"").append(escape(tgtId))
                   .append("\" relationshipRef=\"").append(escape(relId)).append("\"/>\n");
             }
@@ -147,6 +149,32 @@ public final class ModelContextToXml {
         if (diagramObject instanceof IDiagramModelArchimateObject) {
             IArchimateElement el = ((IDiagramModelArchimateObject) diagramObject).getArchimateElement();
             return el != null && el.getId() != null ? el.getId() : "";
+        }
+        return "";
+    }
+
+    /** Get relationship id from a diagram connection (API may be getArchimateRelationship or getRelationship). */
+    private static String getConnectionRelationshipId(com.archimatetool.model.IDiagramModelConnection conn) {
+        try {
+            java.lang.reflect.Method m = conn.getClass().getMethod("getArchimateRelationship");
+            Object rel = m.invoke(conn);
+            if (rel != null) {
+                java.lang.reflect.Method getId = rel.getClass().getMethod("getId");
+                Object id = getId.invoke(rel);
+                return id != null ? id.toString() : "";
+            }
+        } catch (Exception e1) {
+            try {
+                java.lang.reflect.Method m = conn.getClass().getMethod("getRelationship");
+                Object rel = m.invoke(conn);
+                if (rel != null) {
+                    java.lang.reflect.Method getId = rel.getClass().getMethod("getId");
+                    Object id = getId.invoke(rel);
+                    return id != null ? id.toString() : "";
+                }
+            } catch (Exception e2) {
+                // ignore
+            }
         }
         return "";
     }
