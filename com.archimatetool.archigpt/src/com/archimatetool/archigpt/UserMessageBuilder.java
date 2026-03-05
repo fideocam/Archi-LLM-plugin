@@ -21,15 +21,19 @@ public final class UserMessageBuilder {
      * @param prompt           user's request text
      * @return the full user message string
      */
+    /**
+     * Build user message with prompt and selection FIRST so the LLM always sees the request
+     * even if the tail (model XML) is truncated by context limits. Then the model XML.
+     */
     public static String buildUserMessage(String selectionContext, String modelXml, String prompt) {
         StringBuilder sb = new StringBuilder();
-        if (modelXml != null && !modelXml.isEmpty()) {
-            sb.append("Supplied ArchiMate model (XML):\n\n").append(modelXml).append("\n\n");
-        }
+        sb.append("User request: ").append(prompt != null ? prompt : "").append("\n\n");
         if (selectionContext != null && !selectionContext.isEmpty()) {
             sb.append(selectionContext).append("\n\n");
         }
-        sb.append("User request: ").append(prompt);
+        if (modelXml != null && !modelXml.isEmpty()) {
+            sb.append("Supplied ArchiMate model (XML):\n\n").append(modelXml);
+        }
         return sb.toString();
     }
 }

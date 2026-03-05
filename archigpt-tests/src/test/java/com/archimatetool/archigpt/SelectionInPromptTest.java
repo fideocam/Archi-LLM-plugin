@@ -63,17 +63,17 @@ public class SelectionInPromptTest {
         assertTrue("Prompt to LLM must contain diagram name", userMessage.contains("Application Overview"));
     }
 
-    /** Selection context appears before the user request in the message (LLM sees context then prompt). */
+    /** User request appears first in the message so the LLM sees the task even if the tail (e.g. XML) is truncated by context limits. */
     @Test
-    public void selectionContextAppearsBeforeUserRequest() {
+    public void userRequestAppearsFirstThenSelectionThenXml() {
         String selectionContext = "Current selection in the model:\n- Folder \"Technology\"\n";
         String prompt = "add a node";
-        String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, "", prompt);
-        int selectionPos = userMessage.indexOf("Current selection in the model:");
+        String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, "<model/>", prompt);
         int requestPos = userMessage.indexOf("User request: " + prompt);
-        assertTrue("Selection context must appear in message", selectionPos >= 0);
+        int selectionPos = userMessage.indexOf("Current selection in the model:");
         assertTrue("User request must appear in message", requestPos >= 0);
-        assertTrue("Selection context must appear before user request so LLM has context",
-                selectionPos < requestPos);
+        assertTrue("Selection context must appear in message", selectionPos >= 0);
+        assertTrue("User request must appear first so LLM sees the task if context is truncated",
+                requestPos < selectionPos);
     }
 }

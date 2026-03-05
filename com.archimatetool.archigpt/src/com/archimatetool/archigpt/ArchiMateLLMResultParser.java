@@ -64,7 +64,25 @@ public final class ArchiMateLLMResultParser {
             }
         }
 
+        parseStringArray(json, "\"removeElementIds\"", result.getRemoveElementIds());
+        parseStringArray(json, "\"removeRelationshipIds\"", result.getRemoveRelationshipIds());
+
         return result;
+    }
+
+    private static void parseStringArray(String json, String key, List<String> out) {
+        int start = json.indexOf(key);
+        if (start < 0) return;
+        int arrayStart = json.indexOf("[", start);
+        int arrayEnd = findMatchingBracket(json, arrayStart);
+        if (arrayEnd <= arrayStart) return;
+        String arr = json.substring(arrayStart + 1, arrayEnd);
+        Pattern idPattern = Pattern.compile("\"([^\"]+)\"");
+        Matcher m = idPattern.matcher(arr);
+        while (m.find()) {
+            String id = m.group(1).trim();
+            if (!id.isEmpty()) out.add(id);
+        }
     }
 
     private static void parseDiagram(String diagramStr, ArchiMateLLMResult result) {

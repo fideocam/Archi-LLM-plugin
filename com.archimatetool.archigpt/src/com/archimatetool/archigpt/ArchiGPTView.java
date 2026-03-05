@@ -4,7 +4,10 @@
  */
 package com.archimatetool.archigpt;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -28,6 +31,7 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.jface.viewers.ISelection;
@@ -54,14 +58,16 @@ public class ArchiGPTView extends ViewPart {
 
     public static final String ID = "com.archimatetool.archigpt.view";
 
-    /** Max characters of model XML to send to the LLM so the request fits typical Ollama context (e.g. 4k–8k tokens). */
-    private static final int LLM_MAX_XML_CHARS = 24_000;
+    /** Max characters of model XML to send so the request fits typical Ollama context (4k–8k tokens). Kept conservative so the LLM receives the full message. */
+    private static final int LLM_MAX_XML_CHARS = 12_000;
 
     private Text promptText;
+    private Text whatWasSentSummaryText;
     private Text xmlPreviewText;
     private Text responseText;
     private Button sendButton;
     private Button stopButton;
+    private Button saveAsButton;
     private Job currentJob;
     /** Cached selection from model tree/diagram so it is still used when ArchiGPT view has focus. */
     private volatile IStructuredSelection lastModelSelection;
@@ -132,20 +138,47 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
+        Label whatWasSentLabel = new Label(parent, SWT.NONE);
+        whatWasSentLabel.setText("What was sent to the LLM (last request):");
+        whatWasSentLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        whatWasSentSummaryText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
+        GridData whatWasSentData = new GridData(SWT.FILL, SWT.FILL, true, false);
+        whatWasSentData.minimumHeight = 60;
+        whatWasSentData.heightHint = 60;
+        whatWasSentSummaryText.setLayoutData(whatWasSentData);
+        whatWasSentSummaryText.setMessage("(Prompt, selection, and XML length will appear here when you click Ask ArchiGPT)");
+
         Label xmlPreviewLabel = new Label(parent, SWT.NONE);
-        xmlPreviewLabel.setText("Model XML sent to LLM:");
+        xmlPreviewLabel.setText("Model XML sent to LLM (exact payload):");
         xmlPreviewLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         xmlPreviewText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
         GridData xmlPreviewData = new GridData(SWT.FILL, SWT.FILL, true, false);
-        xmlPreviewData.minimumHeight = 80;
-        xmlPreviewData.heightHint = 80;
+        xmlPreviewData.minimumHeight = 100;
+        xmlPreviewData.heightHint = 100;
         xmlPreviewText.setLayoutData(xmlPreviewData);
-        xmlPreviewText.setMessage("(XML will appear here when you ask ArchiGPT)");
+        xmlPreviewText.setMessage("(XML sent to the LLM will appear here when you ask ArchiGPT)");
 
-        Label responseLabel = new Label(parent, SWT.NONE);
+        Composite responseHeader = new Composite(parent, SWT.NONE);
+        responseHeader.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout responseHeaderLayout = new GridLayout(2, false);
+        responseHeaderLayout.marginWidth = 0;
+        responseHeaderLayout.marginHeight = 0;
+        responseHeader.setLayout(responseHeaderLayout);
+        Label responseLabel = new Label(responseHeader, SWT.NONE);
         responseLabel.setText("Response:");
         responseLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        saveAsButton = new Button(responseHeader, SWT.PUSH);
+        saveAsButton.setText("Save as…");
+        saveAsButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        saveAsButton.setEnabled(false);
+        saveAsButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                onSaveAsResponse();
+            }
+        });
 
         responseText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
         GridData responseData = new GridData(SWT.FILL, SWT.FILL, true, true);
@@ -159,15 +192,6 @@ public class ArchiGPTView extends ViewPart {
             }
         };
         getViewSite().getPage().addSelectionListener(selectionListener);
-
-        Display.getDefault().asyncExec(() -> updateXmlPreviewFromModel());
-    }
-
-    private void updateXmlPreviewFromModel() {
-        if (xmlPreviewText == null || xmlPreviewText.isDisposed()) return;
-        List<IArchimateModel> open = IEditorModelManager.INSTANCE.getModels();
-        String xml = (open != null && !open.isEmpty()) ? ModelContextToXml.toXml(open.get(0)) : "";
-        xmlPreviewText.setText(xml != null ? xml : "");
     }
 
     @Override
@@ -295,6 +319,47 @@ public class ArchiGPTView extends ViewPart {
         return s.substring(0, maxLen) + "\n\n... (truncated)";
     }
 
+    /** True if the response text contains a full ArchiMate Open Exchange model XML document. */
+    private static boolean isFullModelXml(String text) {
+        if (text == null) return false;
+        return text.contains("<?xml") && text.contains("<model") && (text.contains("archimateModel") || text.contains("archimate"));
+    }
+
+    /** Extract the first complete Open Exchange XML document from the response, or return the full text. */
+    private static String extractFullModelXml(String response) {
+        if (response == null) return "";
+        int xmlStart = response.indexOf("<?xml");
+        if (xmlStart < 0) return response;
+        int modelEnd = response.indexOf("</model>", xmlStart);
+        if (modelEnd < 0) return response;
+        return response.substring(xmlStart, modelEnd + "</model>".length()).trim();
+    }
+
+    private void onSaveAsResponse() {
+        if (responseText == null || responseText.isDisposed()) return;
+        String content = responseText.getText();
+        if (content == null || content.isEmpty()) return;
+        String toSave = isFullModelXml(content) ? extractFullModelXml(content) : content;
+        org.eclipse.swt.widgets.Shell shell = getViewSite().getShell();
+        if (shell == null) return;
+        FileDialog dialog = new FileDialog(shell, SWT.SAVE);
+        dialog.setFilterNames(new String[] { "ArchiMate model (.archimate)", "XML files (*.xml)", "All files (*.*)" });
+        dialog.setFilterExtensions(new String[] { "*.archimate", "*.xml", "*.*" });
+        dialog.setFileName("model.archimate");
+        String path = dialog.open();
+        if (path == null || path.isEmpty()) return;
+        try {
+            Files.write(new File(path).toPath(), toSave.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            responseText.getDisplay().asyncExec(() -> {
+                org.eclipse.swt.widgets.MessageBox box = new org.eclipse.swt.widgets.MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+                box.setMessage("Could not save file: " + e.getMessage());
+                box.setText("Save failed");
+                box.open();
+            });
+        }
+    }
+
     private void onSendPrompt() {
         String prompt = promptText.getText().trim();
         if (prompt.isEmpty()) {
@@ -325,31 +390,34 @@ public class ArchiGPTView extends ViewPart {
 
         List<IArchimateModel> openModels = IEditorModelManager.INSTANCE.getModels();
         IArchimateModel model = openModels.isEmpty() ? null : openModels.get(0);
-        // Full model XML for preview (default order)
-        String modelXmlPreview = model != null ? ModelContextToXml.toXml(model) : "";
-        if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
-            xmlPreviewText.setText(modelXmlPreview != null ? modelXmlPreview : "");
-        }
 
-        // Build XML for LLM with relevant parts first (selected folder/view/element) so they fit in context
+        // Build XML for LLM with relevant parts first; cap size so it fits Ollama context
         List<IFolder> priorityFolders = getPriorityFoldersFromSelection(selectionToUse);
         List<IArchimateDiagramModel> priorityDiagrams = getPriorityDiagramsFromSelection(selectionToUse, model);
         String modelXmlForRequest = model != null
                 ? ModelContextToXml.toXml(model, LLM_MAX_XML_CHARS, priorityFolders, priorityDiagrams)
                 : "";
-        int fullXmlLength = modelXmlPreview != null ? modelXmlPreview.length() : 0;
-        final int suppliedXmlLengthSent = modelXmlForRequest != null ? modelXmlForRequest.length() : 0;
-        final int suppliedXmlFullLength = fullXmlLength;
-        final boolean suppliedXmlWasTruncated = fullXmlLength > suppliedXmlLengthSent;
+        int fullXmlLength = model != null ? ModelContextToXml.toXml(model).length() : 0;
 
+        // Show exactly what we send in the GUI so the user can verify
+        StringBuilder summary = new StringBuilder();
+        summary.append("Prompt: ").append(prompt).append("\n\n");
+        summary.append("Selection context: ").append(selectionContext != null && !selectionContext.isEmpty() ? selectionContext.trim() : "(none)").append("\n\n");
+        summary.append("Model XML: ").append(modelXmlForRequest != null ? modelXmlForRequest.length() : 0).append(" characters sent (see box below).");
+        if (fullXmlLength > (modelXmlForRequest != null ? modelXmlForRequest.length() : 0)) {
+            summary.append(" [Full model is ").append(fullXmlLength).append(" chars; truncated so the LLM receives the message.]");
+        }
+        if (whatWasSentSummaryText != null && !whatWasSentSummaryText.isDisposed()) {
+            whatWasSentSummaryText.setText(summary.toString());
+        }
+        if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
+            xmlPreviewText.setText(modelXmlForRequest != null ? modelXmlForRequest : "");
+        }
         IWorkbenchWindow window = getViewSite() != null ? getViewSite().getWorkbenchWindow() : null;
         final IFolder targetFolder = resolveTargetFolder(selectionToUse, model);
         final IArchimateDiagramModel targetDiagram = resolveTargetDiagram(selectionToUse, model, window);
 
         final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXmlForRequest, prompt);
-        final String suppliedModelXml = modelXmlForRequest;
-        final String suppliedPrompt = prompt;
-        final String suppliedSelectionContext = selectionContext != null && !selectionContext.isEmpty() ? selectionContext : "(none)";
 
         final Text responseWidget = responseText;
         userRequestedCancel = false;
@@ -370,6 +438,9 @@ public class ArchiGPTView extends ViewPart {
                 Display.getDefault().asyncExec(() -> {
                     if (responseWidget != null && !responseWidget.isDisposed()) {
                         responseWidget.setText(message);
+                    }
+                    if (saveAsButton != null && !saveAsButton.isDisposed()) {
+                        saveAsButton.setEnabled(isFullModelXml(message));
                     }
                     setRequestInProgress(false);
                     currentJob = null;
@@ -402,7 +473,8 @@ public class ArchiGPTView extends ViewPart {
                     }
                     updateStatus("Response received. Parsing and validating…");
                     ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(raw);
-                    boolean hasImportData = !parsed.getElements().isEmpty() || !parsed.getRelationships().isEmpty();
+                    boolean hasImportData = !parsed.getElements().isEmpty() || !parsed.getRelationships().isEmpty()
+                            || !parsed.getRemoveElementIds().isEmpty() || !parsed.getRemoveRelationshipIds().isEmpty();
                     if (parsed.getError() != null && !parsed.getError().isEmpty()) {
                         toShow = "LLM reported: " + parsed.getError() + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                     } else if (!hasImportData) {
@@ -418,7 +490,9 @@ public class ArchiGPTView extends ViewPart {
                             Display.getDefault().syncExec(() -> {
                                 List<IArchimateModel> open = IEditorModelManager.INSTANCE.getModels();
                                 if (open.isEmpty()) {
-                                    importMessage[0] = "No open model to import into.\n\nParsed: " + resultToImport.getElements().size() + " elements, " + resultToImport.getRelationships().size() + " relationships.";
+                                    int addEl = resultToImport.getElements().size(), addRel = resultToImport.getRelationships().size();
+                                    int remEl = resultToImport.getRemoveElementIds().size(), remRel = resultToImport.getRemoveRelationshipIds().size();
+                                    importMessage[0] = "No open model to import into.\n\nParsed: " + addEl + " elements, " + addRel + " relationships to add; " + remEl + " elements, " + remRel + " relationships to remove.";
                                 } else {
                                     IArchimateModel model = open.get(0);
                                     ArchiMateLLMImporter.importIntoModel(resultToImport, model, targetFolder, targetDiagram);
@@ -435,7 +509,12 @@ public class ArchiGPTView extends ViewPart {
                                         where.append(" Created new view \"").append(resultToImport.getDiagram().getName()).append("\"");
                                     }
                                     if (where.length() > 0) where.insert(0, " ");
-                                    importMessage[0] = "Imported into model \"" + model.getName() + "\"" + where + ": " + resultToImport.getElements().size() + " elements, " + resultToImport.getRelationships().size() + " relationships.";
+                                    int addEl = resultToImport.getElements().size(), addRel = resultToImport.getRelationships().size();
+                                    int remEl = resultToImport.getRemoveElementIds().size(), remRel = resultToImport.getRemoveRelationshipIds().size();
+                                    String action = "Imported into model \"" + model.getName() + "\"" + where;
+                                    if (addEl > 0 || addRel > 0) action += ": " + addEl + " elements, " + addRel + " relationships added.";
+                                    if (remEl > 0 || remRel > 0) action += (addEl > 0 || addRel > 0 ? " " : ": ") + "Removed " + remEl + " elements, " + remRel + " relationships.";
+                                    importMessage[0] = (addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0) ? action : "No changes applied.";
                                 }
                             });
                             toShow = importMessage[0] + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
@@ -454,18 +533,8 @@ public class ArchiGPTView extends ViewPart {
                     toShow = "Error while parsing or importing: " + t.getMessage()
                             + (raw != null ? "\n\nRaw LLM response:\n" + truncate(raw, 4000) : "");
                 }
-                StringBuilder whatWasSent = new StringBuilder();
-                whatWasSent.append("What was sent to the LLM:\n\n");
-                whatWasSent.append("Prompt:\n").append(suppliedPrompt != null ? suppliedPrompt : "").append("\n\n");
-                whatWasSent.append("Selection context:\n").append(suppliedSelectionContext != null ? suppliedSelectionContext : "(none)").append("\n\n");
-                whatWasSent.append("Model XML length: ").append(suppliedXmlLengthSent).append(" characters sent to LLM");
-                if (suppliedXmlWasTruncated) {
-                    whatWasSent.append(" (full model was ").append(suppliedXmlFullLength).append(" chars; truncated for LLM context limit — increase Ollama context in Settings for more)");
-                }
-                whatWasSent.append("\n\nModel XML (supplied to LLM):\n\n").append(suppliedModelXml != null ? suppliedModelXml : "(none — no model open)").append("\n\n");
-                whatWasSent.append("---\n\n");
-                toShow = whatWasSent.toString() + (toShow != null ? toShow : "");
-                finishRequest(toShow);
+                String responseOnly = toShow != null ? toShow : "";
+                finishRequest(responseOnly);
                 return Status.OK_STATUS;
             }
         };

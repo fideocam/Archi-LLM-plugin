@@ -3,7 +3,9 @@
  */
 package com.archimatetool.archigpt;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.emf.ecore.EClass;
@@ -16,6 +18,7 @@ import com.archimatetool.model.IArchimateFactory;
 import com.archimatetool.model.IArchimateModel;
 import com.archimatetool.model.IArchimatePackage;
 import com.archimatetool.model.IArchimateRelationship;
+import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IDiagramModelConnection;
 import com.archimatetool.model.IFolder;
@@ -107,6 +110,147 @@ public final class ArchiMateLLMImporter {
         if (result.getDiagram() != null && result.getDiagram().getName() != null && !result.getDiagram().getName().isEmpty()) {
             createNewDiagram(result.getDiagram(), model, idToConcept, idToRelationship);
         }
+
+        removeFromModel(model, result.getRemoveRelationshipIds(), result.getRemoveElementIds());
+    }
+
+    /**
+     * Remove concepts by id from the model and from all diagrams (figures and connections).
+     * Relationships are removed first, then elements.
+     */
+    private static void removeFromModel(IArchimateModel model, List<String> relationshipIds, List<String> elementIds) {
+        if (model == null || (relationshipIds == null && elementIds == null)) return;
+        if (relationshipIds != null) {
+            for (String id : relationshipIds) {
+                IArchimateConcept concept = findConceptById(model, id);
+                if (concept instanceof IArchimateRelationship) {
+                    removeRelationshipFromDiagrams(model, (IArchimateRelationship) concept);
+                    removeConceptFromFolder(concept);
+                }
+            }
+        }
+        if (elementIds != null) {
+            for (String id : elementIds) {
+                IArchimateConcept concept = findConceptById(model, id);
+                if (concept instanceof IArchimateElement) {
+                    removeElementFromDiagrams(model, (IArchimateElement) concept);
+                    removeConceptFromFolder(concept);
+                }
+            }
+        }
+    }
+
+    private static IArchimateConcept findConceptById(IArchimateModel model, String id) {
+        if (model == null || id == null || id.isEmpty()) return null;
+        for (IFolder folder : model.getFolders()) {
+            IArchimateConcept found = findConceptInFolder(folder, id);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static IArchimateConcept findConceptInFolder(IFolder folder, String id) {
+        if (folder == null) return null;
+        for (EObject obj : folder.getElements()) {
+            if (obj instanceof IArchimateConcept) {
+                String existing = ((IArchimateConcept) obj).getId();
+                if (id.equals(existing)) return (IArchimateConcept) obj;
+            }
+        }
+        for (IFolder child : folder.getFolders()) {
+            IArchimateConcept found = findConceptInFolder(child, id);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static void removeConceptFromFolder(IArchimateConcept concept) {
+        if (concept == null) return;
+        Object container = concept.eContainer();
+        if (container instanceof IFolder) {
+            ((IFolder) container).getElements().remove(concept);
+        }
+    }
+
+    private static void removeRelationshipFromDiagrams(IArchimateModel model, IArchimateRelationship relationship) {
+        if (model.getDiagramModels() == null) return;
+        for (IDiagramModel dm : model.getDiagramModels()) {
+            if (!(dm instanceof IArchimateDiagramModel)) continue;
+            IArchimateDiagramModel diagram = (IArchimateDiagramModel) dm;
+            List<Object> toRemove = new ArrayList<>();
+            for (Object child : diagram.getChildren()) {
+                if (child instanceof IDiagramModelConnection) {
+                    IDiagramModelConnection conn = (IDiagramModelConnection) child;
+                    if (getConnectionRelationship(conn) == relationship) toRemove.add(child);
+                }
+            }
+            for (Object obj : toRemove) {
+                removeConnectionFromDiagram(diagram, (IDiagramModelConnection) obj);
+            }
+        }
+    }
+
+    private static void removeElementFromDiagrams(IArchimateModel model, IArchimateElement element) {
+        if (model.getDiagramModels() == null) return;
+        for (IDiagramModel dm : model.getDiagramModels()) {
+            if (!(dm instanceof IArchimateDiagramModel)) continue;
+            IArchimateDiagramModel diagram = (IArchimateDiagramModel) dm;
+            List<Object> figuresToRemove = new ArrayList<>();
+            for (Object child : diagram.getChildren()) {
+                if (child instanceof IDiagramModelArchimateObject) {
+                    if (element.equals(((IDiagramModelArchimateObject) child).getArchimateElement())) {
+                        figuresToRemove.add(child);
+                    }
+                }
+            }
+            for (Object fig : figuresToRemove) {
+                removeDiagramObjectAndConnections(diagram, (IDiagramModelArchimateObject) fig);
+            }
+        }
+    }
+
+    private static void removeDiagramObjectAndConnections(IArchimateDiagramModel diagram, IDiagramModelArchimateObject dmo) {
+        List<Object> toRemove = new ArrayList<>();
+        for (Object child : diagram.getChildren()) {
+            if (child instanceof IDiagramModelConnection) {
+                IDiagramModelConnection c = (IDiagramModelConnection) child;
+                if (c.getSource() == dmo || c.getTarget() == dmo) toRemove.add(child);
+            }
+        }
+        for (Object obj : toRemove) {
+            removeConnectionFromDiagram(diagram, (IDiagramModelConnection) obj);
+        }
+        diagram.getChildren().remove(dmo);
+    }
+
+    private static void removeConnectionFromDiagram(IArchimateDiagramModel diagram, IDiagramModelConnection conn) {
+        try {
+            java.lang.reflect.Method getConn = diagram.getClass().getMethod("getConnections");
+            @SuppressWarnings("unchecked")
+            java.util.List<IDiagramModelConnection> list = (java.util.List<IDiagramModelConnection>) getConn.invoke(diagram);
+            if (list != null) list.remove(conn);
+            return;
+        } catch (Exception e) {
+            // fallback: connection may be in children
+        }
+        diagram.getChildren().remove(conn);
+    }
+
+    private static IArchimateRelationship getConnectionRelationship(IDiagramModelConnection conn) {
+        try {
+            java.lang.reflect.Method m = conn.getClass().getMethod("getArchimateRelationship");
+            Object rel = m.invoke(conn);
+            if (rel instanceof IArchimateRelationship) return (IArchimateRelationship) rel;
+        } catch (Exception e1) {
+            try {
+                java.lang.reflect.Method m = conn.getClass().getMethod("getRelationship");
+                Object rel = m.invoke(conn);
+                if (rel instanceof IArchimateRelationship) return (IArchimateRelationship) rel;
+            } catch (Exception e2) {
+                // ignore
+            }
+        }
+        return null;
     }
 
     private static void createNewDiagram(ArchiMateLLMResult.DiagramSpec spec, IArchimateModel model,

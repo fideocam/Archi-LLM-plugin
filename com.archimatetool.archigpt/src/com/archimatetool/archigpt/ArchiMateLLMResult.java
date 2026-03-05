@@ -14,6 +14,8 @@ public final class ArchiMateLLMResult {
 
     private final List<ElementSpec> elements = new ArrayList<>();
     private final List<RelationshipSpec> relationships = new ArrayList<>();
+    private final List<String> removeElementIds = new ArrayList<>();
+    private final List<String> removeRelationshipIds = new ArrayList<>();
     private DiagramSpec diagram;
     private String error;
 
@@ -23,6 +25,14 @@ public final class ArchiMateLLMResult {
 
     public List<RelationshipSpec> getRelationships() {
         return relationships;
+    }
+
+    public List<String> getRemoveElementIds() {
+        return removeElementIds;
+    }
+
+    public List<String> getRemoveRelationshipIds() {
+        return removeRelationshipIds;
     }
 
     public String getError() {
