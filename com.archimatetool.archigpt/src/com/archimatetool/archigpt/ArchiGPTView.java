@@ -88,12 +88,14 @@ public class ArchiGPTView extends ViewPart {
         });
 
         Composite buttonBar = new Composite(parent, SWT.NONE);
-        buttonBar.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
-        GridLayout buttonLayout = new GridLayout(2, false);
+        buttonBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout buttonLayout = new GridLayout(3, false);
         buttonLayout.marginWidth = 0;
         buttonLayout.marginHeight = 0;
         buttonLayout.horizontalSpacing = 8;
         buttonBar.setLayout(buttonLayout);
+        Label filler = new Label(buttonBar, SWT.NONE);
+        filler.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         sendButton = new Button(buttonBar, SWT.PUSH);
         sendButton.setText("Ask ArchiGPT");
@@ -260,10 +262,7 @@ public class ArchiGPTView extends ViewPart {
                     if (parsed.getError() != null && !parsed.getError().isEmpty()) {
                         toShow = "LLM reported: " + parsed.getError() + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                     } else if (!hasImportData) {
-                        String xmlHeader = (suppliedModelXml != null && !suppliedModelXml.isEmpty())
-                                ? "Supplied model (XML):\n\n" + suppliedModelXml + "\n\n--- Analysis result ---\n\n"
-                                : "Analysis result:\n\n";
-                        toShow = xmlHeader + raw;
+                        toShow = "Analysis result:\n\n" + raw;
                     } else {
                         List<String> errors = ArchiMateSchemaValidator.validate(parsed);
                         if (!errors.isEmpty()) {
@@ -342,6 +341,9 @@ public class ArchiGPTView extends ViewPart {
                 } catch (Throwable t) {
                     toShow = "Error while parsing or importing: " + t.getMessage()
                             + (raw != null ? "\n\nRaw LLM response:\n" + truncate(raw, 4000) : "");
+                }
+                if (suppliedModelXml != null && !suppliedModelXml.isEmpty() && toShow != null && !toShow.isEmpty()) {
+                    toShow = "Raw ArchiMate model (XML) sent to LLM:\n\n" + suppliedModelXml + "\n\n---\n\n" + toShow;
                 }
                 finishRequest(toShow);
                 return Status.OK_STATUS;
