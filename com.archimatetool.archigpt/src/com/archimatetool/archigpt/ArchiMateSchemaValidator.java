@@ -40,7 +40,10 @@ public final class ArchiMateSchemaValidator {
             }
             EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(e.getType());
             if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
-                errors.add("Invalid ArchiMate element type: " + e.getType() + " (id=" + e.getId() + ")");
+                String hint = "Diagram".equalsIgnoreCase(e.getType()) || "View".equalsIgnoreCase(e.getType())
+                        ? ". Use the \"diagram\" object for a new view (not an element type)"
+                        : "";
+                errors.add("Invalid ArchiMate element type: " + e.getType() + " (id=" + e.getId() + ")" + hint);
                 continue;
             }
             elementIds.add(e.getId());
