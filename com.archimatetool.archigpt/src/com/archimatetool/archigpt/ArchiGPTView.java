@@ -26,7 +26,10 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
+import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.ui.ISelectionListener;
+import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.part.ViewPart;
 
@@ -48,10 +51,14 @@ public class ArchiGPTView extends ViewPart {
     public static final String ID = "com.archimatetool.archigpt.view";
 
     private Text promptText;
+    private Text xmlPreviewText;
     private Text responseText;
     private Button sendButton;
     private Button stopButton;
     private Job currentJob;
+    /** Cached selection from model tree/diagram so it is still used when ArchiGPT view has focus. */
+    private volatile IStructuredSelection lastModelSelection;
+    private ISelectionListener selectionListener;
     /** Holder for the active HTTP connection so Stop can disconnect it and abort the Ollama request. */
     private volatile AtomicReference<HttpURLConnection> currentConnectionRef;
     /** Set when user clicks Stop so the job can treat IOException as cancel even before monitor is updated. */
@@ -118,6 +125,17 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
+        Label xmlPreviewLabel = new Label(parent, SWT.NONE);
+        xmlPreviewLabel.setText("Model XML sent to LLM:");
+        xmlPreviewLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        xmlPreviewText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
+        GridData xmlPreviewData = new GridData(SWT.FILL, SWT.FILL, true, false);
+        xmlPreviewData.minimumHeight = 80;
+        xmlPreviewData.heightHint = 80;
+        xmlPreviewText.setLayoutData(xmlPreviewData);
+        xmlPreviewText.setMessage("(XML will appear here when you ask ArchiGPT)");
+
         Label responseLabel = new Label(parent, SWT.NONE);
         responseLabel.setText("Response:");
         responseLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
@@ -127,6 +145,31 @@ public class ArchiGPTView extends ViewPart {
         responseData.minimumHeight = 150;
         responseData.heightHint = 150;
         responseText.setLayoutData(responseData);
+
+        selectionListener = (part, selection) -> {
+            if (selection != null && SelectionContextBuilder.isModelSelection(selection)) {
+                lastModelSelection = (IStructuredSelection) selection;
+            }
+        };
+        getViewSite().getPage().addSelectionListener(selectionListener);
+
+        Display.getDefault().asyncExec(() -> updateXmlPreviewFromModel());
+    }
+
+    private void updateXmlPreviewFromModel() {
+        if (xmlPreviewText == null || xmlPreviewText.isDisposed()) return;
+        List<IArchimateModel> open = IEditorModelManager.INSTANCE.getModels();
+        String xml = (open != null && !open.isEmpty()) ? ModelContextToXml.toXml(open.get(0)) : "";
+        xmlPreviewText.setText(xml != null ? xml : "");
+    }
+
+    @Override
+    public void dispose() {
+        if (selectionListener != null && getViewSite() != null && getViewSite().getPage() != null) {
+            getViewSite().getPage().removeSelectionListener(selectionListener);
+            selectionListener = null;
+        }
+        super.dispose();
     }
 
     private void setRequestInProgress(boolean inProgress) {
@@ -156,6 +199,41 @@ public class ArchiGPTView extends ViewPart {
         }
         sb.append("User request: ").append(prompt);
         return sb.toString();
+    }
+
+    private static IFolder resolveTargetFolder(IStructuredSelection selection, IArchimateModel model) {
+        if (selection == null || selection.isEmpty() || model == null) return null;
+        Object first = selection.getFirstElement();
+        if (first instanceof IFolder) return (IFolder) first;
+        if (first instanceof IArchimateConcept) {
+            Object container = ((IArchimateConcept) first).eContainer();
+            if (container instanceof IFolder) return (IFolder) container;
+        }
+        return null;
+    }
+
+    private static IArchimateDiagramModel resolveTargetDiagram(IStructuredSelection selection, IArchimateModel model, IWorkbenchWindow window) {
+        if (model == null) return null;
+        if (selection != null && !selection.isEmpty()) {
+            Object first = selection.getFirstElement();
+            if (first instanceof IArchimateDiagramModel && model.equals(((IArchimateDiagramModel) first).getArchimateModel())) {
+                return (IArchimateDiagramModel) first;
+            }
+        }
+        try {
+            if (window != null && window.getActivePage() != null) {
+                IEditorPart editor = window.getActivePage().getActiveEditor();
+                if (editor != null) {
+                    Object adapter = editor.getAdapter(IDiagramModel.class);
+                    if (adapter instanceof IArchimateDiagramModel) {
+                        IArchimateDiagramModel diagram = (IArchimateDiagramModel) adapter;
+                        if (model.equals(diagram.getArchimateModel())) return diagram;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     private void onStopRequest() {
@@ -190,20 +268,34 @@ public class ArchiGPTView extends ViewPart {
             return;
         }
 
-        String selectionContext = "";
+        IStructuredSelection selectionToUse = null;
         try {
             IWorkbenchWindow window = getViewSite().getWorkbenchWindow();
             if (window != null && window.getSelectionService() != null) {
-                selectionContext = SelectionContextBuilder.buildFromSelectionService(window.getSelectionService());
+                ISelection current = window.getSelectionService().getSelection();
+                if (SelectionContextBuilder.isModelSelection(current)) {
+                    selectionToUse = (IStructuredSelection) current;
+                }
+                if (selectionToUse == null) {
+                    selectionToUse = lastModelSelection;
+                }
             }
         } catch (Exception e) {
-            // ignore; proceed without selection context
+            selectionToUse = lastModelSelection;
         }
-        String modelXml = "";
+        String selectionContext = selectionToUse != null ? SelectionContextBuilder.buildFromStructuredSelection(selectionToUse) : "";
+
         List<IArchimateModel> openModels = IEditorModelManager.INSTANCE.getModels();
-        if (!openModels.isEmpty()) {
-            modelXml = ModelContextToXml.toXml(openModels.get(0));
+        IArchimateModel model = openModels.isEmpty() ? null : openModels.get(0);
+        String modelXml = model != null ? ModelContextToXml.toXml(model) : "";
+        if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
+            xmlPreviewText.setText(modelXml != null ? modelXml : "");
         }
+
+        IWorkbenchWindow window = getViewSite() != null ? getViewSite().getWorkbenchWindow() : null;
+        final IFolder targetFolder = resolveTargetFolder(selectionToUse, model);
+        final IArchimateDiagramModel targetDiagram = resolveTargetDiagram(selectionToUse, model, window);
+
         final String userMessage = buildUserMessage(selectionContext, modelXml, prompt);
         final String suppliedModelXml = modelXml;
 
@@ -277,42 +369,6 @@ public class ArchiGPTView extends ViewPart {
                                     importMessage[0] = "No open model to import into.\n\nParsed: " + resultToImport.getElements().size() + " elements, " + resultToImport.getRelationships().size() + " relationships.";
                                 } else {
                                     IArchimateModel model = open.get(0);
-                                    IFolder targetFolder = null;
-                                    IArchimateDiagramModel targetDiagram = null;
-                                    try {
-                                        IWorkbenchWindow window = getViewSite().getWorkbenchWindow();
-                                        if (window != null) {
-                                            if (window.getSelectionService() != null) {
-                                                Object sel = window.getSelectionService().getSelection();
-                                                if (sel instanceof IStructuredSelection) {
-                                                    Object first = ((IStructuredSelection) sel).getFirstElement();
-                                                    if (first instanceof IFolder) {
-                                                        targetFolder = (IFolder) first;
-                                                    } else if (first instanceof IArchimateConcept) {
-                                                        Object container = ((IArchimateConcept) first).eContainer();
-                                                        if (container instanceof IFolder) {
-                                                            targetFolder = (IFolder) container;
-                                                        }
-                                                    } else if (first instanceof IArchimateDiagramModel && model.equals(((IArchimateDiagramModel) first).getArchimateModel())) {
-                                                        targetDiagram = (IArchimateDiagramModel) first;
-                                                    }
-                                                }
-                                            }
-                                            if (targetDiagram == null && window.getActivePage() != null) {
-                                                IEditorPart editor = window.getActivePage().getActiveEditor();
-                                                if (editor != null) {
-                                                    Object adapter = editor.getAdapter(IDiagramModel.class);
-                                                    if (adapter instanceof IArchimateDiagramModel) {
-                                                        IArchimateDiagramModel diagram = (IArchimateDiagramModel) adapter;
-                                                        if (model.equals(diagram.getArchimateModel())) {
-                                                            targetDiagram = diagram;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } catch (Exception ignored) {
-                                    }
                                     ArchiMateLLMImporter.importIntoModel(resultToImport, model, targetFolder, targetDiagram);
                                     StringBuilder where = new StringBuilder();
                                     if (targetFolder != null) {
