@@ -49,6 +49,7 @@ import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IFolder;
 
 import org.eclipse.ui.IEditorPart;
+import org.osgi.framework.FrameworkUtil;
 
 /**
  * ArchiGPT view with a text area for the user prompt and a button to send to the LLM.
@@ -84,6 +85,10 @@ public class ArchiGPTView extends ViewPart {
         layout.marginHeight = 10;
         layout.verticalSpacing = 8;
         parent.setLayout(layout);
+
+        Label buildLabel = new Label(parent, SWT.NONE);
+        buildLabel.setText("ArchiGPT " + getBuildVersion());
+        buildLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         Label promptLabel = new Label(parent, SWT.NONE);
         promptLabel.setText("Prompt:");
@@ -138,28 +143,6 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
-        Label whatWasSentLabel = new Label(parent, SWT.NONE);
-        whatWasSentLabel.setText("What was sent to the LLM (last request):");
-        whatWasSentLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        whatWasSentSummaryText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
-        GridData whatWasSentData = new GridData(SWT.FILL, SWT.FILL, true, false);
-        whatWasSentData.minimumHeight = 60;
-        whatWasSentData.heightHint = 60;
-        whatWasSentSummaryText.setLayoutData(whatWasSentData);
-        whatWasSentSummaryText.setMessage("(Prompt, selection, and XML length will appear here when you click Ask ArchiGPT)");
-
-        Label xmlPreviewLabel = new Label(parent, SWT.NONE);
-        xmlPreviewLabel.setText("Model XML sent to LLM (exact payload):");
-        xmlPreviewLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        xmlPreviewText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
-        GridData xmlPreviewData = new GridData(SWT.FILL, SWT.FILL, true, false);
-        xmlPreviewData.minimumHeight = 100;
-        xmlPreviewData.heightHint = 100;
-        xmlPreviewText.setLayoutData(xmlPreviewData);
-        xmlPreviewText.setMessage("(XML sent to the LLM will appear here when you ask ArchiGPT)");
-
         Composite responseHeader = new Composite(parent, SWT.NONE);
         responseHeader.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         GridLayout responseHeaderLayout = new GridLayout(2, false);
@@ -167,7 +150,7 @@ public class ArchiGPTView extends ViewPart {
         responseHeaderLayout.marginHeight = 0;
         responseHeader.setLayout(responseHeaderLayout);
         Label responseLabel = new Label(responseHeader, SWT.NONE);
-        responseLabel.setText("Response:");
+        responseLabel.setText("Response (and what was sent to the LLM, below):");
         responseLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         saveAsButton = new Button(responseHeader, SWT.PUSH);
         saveAsButton.setText("Save as…");
@@ -179,6 +162,32 @@ public class ArchiGPTView extends ViewPart {
                 onSaveAsResponse();
             }
         });
+
+        Label whatWasSentLabel = new Label(parent, SWT.NONE);
+        whatWasSentLabel.setText("What was sent to the LLM (last request):");
+        whatWasSentLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        whatWasSentSummaryText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
+        GridData whatWasSentData = new GridData(SWT.FILL, SWT.FILL, true, false);
+        whatWasSentData.minimumHeight = 70;
+        whatWasSentData.heightHint = 70;
+        whatWasSentSummaryText.setLayoutData(whatWasSentData);
+        whatWasSentSummaryText.setMessage("(Prompt, selection, and XML length appear here when you click Ask ArchiGPT)");
+
+        Label xmlPreviewLabel = new Label(parent, SWT.NONE);
+        xmlPreviewLabel.setText("Model XML sent to LLM (exact payload):");
+        xmlPreviewLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        xmlPreviewText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
+        GridData xmlPreviewData = new GridData(SWT.FILL, SWT.FILL, true, false);
+        xmlPreviewData.minimumHeight = 120;
+        xmlPreviewData.heightHint = 120;
+        xmlPreviewText.setLayoutData(xmlPreviewData);
+        xmlPreviewText.setMessage("(XML sent to the LLM appears here when you click Ask ArchiGPT)");
+
+        Label responseDivider = new Label(parent, SWT.NONE);
+        responseDivider.setText("LLM response:");
+        responseDivider.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         responseText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
         GridData responseData = new GridData(SWT.FILL, SWT.FILL, true, true);
@@ -201,6 +210,14 @@ public class ArchiGPTView extends ViewPart {
             selectionListener = null;
         }
         super.dispose();
+    }
+
+    private static String getBuildVersion() {
+        try {
+            return "v" + FrameworkUtil.getBundle(ArchiGPTView.class).getVersion().toString();
+        } catch (Exception e) {
+            return "build unknown";
+        }
     }
 
     private void setRequestInProgress(boolean inProgress) {
