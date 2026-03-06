@@ -26,6 +26,8 @@ import org.eclipse.swt.events.KeyAdapter;
 import org.eclipse.swt.events.KeyEvent;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.custom.CTabFolder;
+import org.eclipse.swt.custom.CTabItem;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
@@ -67,9 +69,7 @@ public class ArchiGPTView extends ViewPart {
     private Text xmlPreviewText;
     private Text responseText;
     private Button sendButton;
-    private Button stopButton;
     private Button saveAsButton;
-    private Button verboseDebugCheckbox;
     private Label buildLabel;
     private Label whatWasSentLabel;
     private Label xmlPreviewLabel;
@@ -84,21 +84,30 @@ public class ArchiGPTView extends ViewPart {
 
     @Override
     public void createPartControl(Composite parent) {
-        GridLayout layout = new GridLayout(1, false);
-        layout.marginWidth = 10;
-        layout.marginHeight = 10;
-        layout.verticalSpacing = 8;
-        parent.setLayout(layout);
+        GridLayout rootLayout = new GridLayout(1, false);
+        rootLayout.marginWidth = 0;
+        rootLayout.marginHeight = 0;
+        parent.setLayout(rootLayout);
 
-        buildLabel = new Label(parent, SWT.NONE);
-        buildLabel.setText("ArchiGPT " + getBuildVersion());
-        buildLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        CTabFolder tabFolder = new CTabFolder(parent, SWT.TOP | SWT.BORDER);
+        tabFolder.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
-        Label promptLabel = new Label(parent, SWT.NONE);
+        // ---- Main tab: prompt + button + response ----
+        CTabItem mainTab = new CTabItem(tabFolder, SWT.NONE);
+        mainTab.setText("ArchiGPT");
+        Composite mainComposite = new Composite(tabFolder, SWT.NONE);
+        mainTab.setControl(mainComposite);
+        GridLayout mainLayout = new GridLayout(1, false);
+        mainLayout.marginWidth = 10;
+        mainLayout.marginHeight = 10;
+        mainLayout.verticalSpacing = 8;
+        mainComposite.setLayout(mainLayout);
+
+        Label promptLabel = new Label(mainComposite, SWT.NONE);
         promptLabel.setText("Prompt:");
         promptLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        promptText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL);
+        promptText = new Text(mainComposite, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL);
         GridData promptData = new GridData(SWT.FILL, SWT.FILL, true, true);
         promptData.minimumHeight = 120;
         promptData.heightHint = 120;
@@ -110,15 +119,15 @@ public class ArchiGPTView extends ViewPart {
                 if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) {
                     if ((e.stateMask & SWT.SHIFT) == 0) {
                         e.doit = false;
-                        onSendPrompt();
+                        if (currentJob != null) onStopRequest(); else onSendPrompt();
                     }
                 }
             }
         });
 
-        Composite buttonBar = new Composite(parent, SWT.NONE);
+        Composite buttonBar = new Composite(mainComposite, SWT.NONE);
         buttonBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        GridLayout buttonLayout = new GridLayout(3, false);
+        GridLayout buttonLayout = new GridLayout(2, false);
         buttonLayout.marginWidth = 0;
         buttonLayout.marginHeight = 0;
         buttonLayout.horizontalSpacing = 8;
@@ -132,42 +141,21 @@ public class ArchiGPTView extends ViewPart {
         sendButton.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                onSendPrompt();
+                if (currentJob != null) onStopRequest(); else onSendPrompt();
             }
         });
 
-        stopButton = new Button(buttonBar, SWT.PUSH);
-        stopButton.setText("Stop");
-        stopButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
-        stopButton.setVisible(false);
-        stopButton.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                onStopRequest();
-            }
-        });
-
-        verboseDebugCheckbox = new Button(parent, SWT.CHECK);
-        verboseDebugCheckbox.setText("Verbose debug");
-        verboseDebugCheckbox.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        verboseDebugCheckbox.setSelection(false);
-        verboseDebugCheckbox.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                setVerboseDebugVisible(verboseDebugCheckbox.getSelection());
-            }
-        });
-
-        Composite responseHeader = new Composite(parent, SWT.NONE);
-        responseHeader.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        GridLayout responseHeaderLayout = new GridLayout(2, false);
-        responseHeaderLayout.marginWidth = 0;
-        responseHeaderLayout.marginHeight = 0;
-        responseHeader.setLayout(responseHeaderLayout);
-        Label responseLabel = new Label(responseHeader, SWT.NONE);
-        responseLabel.setText("Response (and what was sent to the LLM, below):");
+        Label responseLabel = new Label(mainComposite, SWT.NONE);
+        responseLabel.setText("Response:");
         responseLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        saveAsButton = new Button(responseHeader, SWT.PUSH);
+
+        responseText = new Text(mainComposite, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
+        GridData responseData = new GridData(SWT.FILL, SWT.FILL, true, true);
+        responseData.minimumHeight = 200;
+        responseData.heightHint = 200;
+        responseText.setLayoutData(responseData);
+
+        saveAsButton = new Button(mainComposite, SWT.PUSH);
         saveAsButton.setText("Save as…");
         saveAsButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
         saveAsButton.setEnabled(false);
@@ -178,37 +166,44 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
-        whatWasSentLabel = new Label(parent, SWT.NONE);
+        // ---- Debug tab: version, what was sent, model XML ----
+        CTabItem debugTab = new CTabItem(tabFolder, SWT.NONE);
+        debugTab.setText("Debug");
+        Composite debugComposite = new Composite(tabFolder, SWT.NONE);
+        debugTab.setControl(debugComposite);
+        GridLayout debugLayout = new GridLayout(1, false);
+        debugLayout.marginWidth = 10;
+        debugLayout.marginHeight = 10;
+        debugLayout.verticalSpacing = 8;
+        debugComposite.setLayout(debugLayout);
+
+        buildLabel = new Label(debugComposite, SWT.NONE);
+        buildLabel.setText("ArchiGPT " + getBuildVersion());
+        buildLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        whatWasSentLabel = new Label(debugComposite, SWT.NONE);
         whatWasSentLabel.setText("What was sent to the LLM (last request):");
         whatWasSentLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        whatWasSentSummaryText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
+        whatWasSentSummaryText = new Text(debugComposite, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
         GridData whatWasSentData = new GridData(SWT.FILL, SWT.FILL, true, false);
         whatWasSentData.minimumHeight = 70;
         whatWasSentData.heightHint = 70;
         whatWasSentSummaryText.setLayoutData(whatWasSentData);
         whatWasSentSummaryText.setMessage("(Prompt, selection, and XML length appear here when you click Ask ArchiGPT)");
 
-        xmlPreviewLabel = new Label(parent, SWT.NONE);
+        xmlPreviewLabel = new Label(debugComposite, SWT.NONE);
         xmlPreviewLabel.setText("Model XML sent to LLM (exact payload):");
         xmlPreviewLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        xmlPreviewText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
-        GridData xmlPreviewData = new GridData(SWT.FILL, SWT.FILL, true, false);
-        xmlPreviewData.minimumHeight = 120;
-        xmlPreviewData.heightHint = 120;
+        xmlPreviewText = new Text(debugComposite, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
+        GridData xmlPreviewData = new GridData(SWT.FILL, SWT.FILL, true, true);
+        xmlPreviewData.minimumHeight = 200;
+        xmlPreviewData.heightHint = 200;
         xmlPreviewText.setLayoutData(xmlPreviewData);
         xmlPreviewText.setMessage("(XML sent to the LLM appears here when you click Ask ArchiGPT)");
 
-        Label responseDivider = new Label(parent, SWT.NONE);
-        responseDivider.setText("LLM response:");
-        responseDivider.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        responseText = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
-        GridData responseData = new GridData(SWT.FILL, SWT.FILL, true, true);
-        responseData.minimumHeight = 150;
-        responseData.heightHint = 150;
-        responseText.setLayoutData(responseData);
+        tabFolder.setSelection(0);
 
         selectionListener = (part, selection) -> {
             if (selection != null && SelectionContextBuilder.isModelSelection(selection)) {
@@ -216,20 +211,6 @@ public class ArchiGPTView extends ViewPart {
             }
         };
         getViewSite().getPage().addSelectionListener(selectionListener);
-
-        setVerboseDebugVisible(false);
-    }
-
-    private void setVerboseDebugVisible(boolean visible) {
-        if (buildLabel != null && !buildLabel.isDisposed()) buildLabel.setVisible(visible);
-        if (whatWasSentLabel != null && !whatWasSentLabel.isDisposed()) whatWasSentLabel.setVisible(visible);
-        if (whatWasSentSummaryText != null && !whatWasSentSummaryText.isDisposed()) whatWasSentSummaryText.setVisible(visible);
-        if (xmlPreviewLabel != null && !xmlPreviewLabel.isDisposed()) xmlPreviewLabel.setVisible(visible);
-        if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) xmlPreviewText.setVisible(visible);
-        if (buildLabel != null && !buildLabel.isDisposed()) {
-            Composite parent = buildLabel.getParent();
-            if (parent != null && !parent.isDisposed()) parent.layout(true, true);
-        }
     }
 
     @Override
@@ -256,8 +237,7 @@ public class ArchiGPTView extends ViewPart {
             promptText.setEditable(!inProgress);
             promptText.setForeground(promptText.getDisplay().getSystemColor(
                     inProgress ? SWT.COLOR_DARK_GRAY : SWT.COLOR_WIDGET_FOREGROUND));
-            sendButton.setEnabled(!inProgress);
-            stopButton.setVisible(inProgress);
+            sendButton.setText(inProgress ? "Stop ArchiGPT" : "Ask ArchiGPT");
         };
         if (Display.getCurrent() != null) {
             update.run();
@@ -472,8 +452,6 @@ public class ArchiGPTView extends ViewPart {
         final IArchimateDiagramModel targetDiagram = resolveTargetDiagram(selectionToUse, model, window);
 
         final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXmlForRequest, prompt);
-        final int totalPayloadChars = userMessage != null ? userMessage.length() : 0;
-        final int xmlCharsSent = xmlLen;
 
         final Text responseWidget = responseText;
         userRequestedCancel = false;
@@ -590,8 +568,7 @@ public class ArchiGPTView extends ViewPart {
                             + (raw != null ? "\n\nRaw LLM response:\n" + truncate(raw, 4000) : "");
                 }
                 String responseOnly = toShow != null ? toShow : "";
-                String verification = "Sent to LLM: " + totalPayloadChars + " chars total (" + xmlCharsSent + " chars model XML). ---\n\n";
-                finishRequest(verification + responseOnly);
+                finishRequest(responseOnly);
                 return Status.OK_STATUS;
             }
         };
