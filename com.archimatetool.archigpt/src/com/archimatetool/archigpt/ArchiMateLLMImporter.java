@@ -266,11 +266,20 @@ public final class ArchiMateLLMImporter {
     private static void createNewDiagram(ArchiMateLLMResult.DiagramSpec spec, IArchimateModel model,
             Map<String, IArchimateConcept> idToConcept, Map<String, IArchimateRelationship> idToRelationship) {
         IArchimateDiagramModel diagram = IArchimateFactory.eINSTANCE.createArchimateDiagramModel();
-        diagram.setName(spec.getName());
+        diagram.setName(spec.getName() != null ? spec.getName() : "New View");
         if (spec.getViewpoint() != null && !spec.getViewpoint().isEmpty()) {
             diagram.setViewpoint(spec.getViewpoint());
         }
-        model.getDiagramModels().add(diagram);
+        // Link diagram to model and add to model's list (required for view to appear in Archi)
+        try {
+            java.lang.reflect.Method setModel = diagram.getClass().getMethod("setArchimateModel", IArchimateModel.class);
+            setModel.invoke(diagram, model);
+        } catch (Throwable t) {
+            // ignore if API not available
+        }
+        if (model.getDiagramModels() != null) {
+            model.getDiagramModels().add(diagram);
+        }
 
         Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
         for (ArchiMateLLMResult.DiagramNodeSpec node : spec.getNodes()) {
