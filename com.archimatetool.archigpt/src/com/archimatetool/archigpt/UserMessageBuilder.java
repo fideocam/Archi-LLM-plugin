@@ -22,17 +22,18 @@ public final class UserMessageBuilder {
      * @return the full user message string
      */
     /**
-     * Build user message with prompt and selection FIRST so the LLM always sees the request
-     * even if the tail (model XML) is truncated by context limits. Then the model XML.
+     * Build user message with the ArchiMate model XML FIRST so the LLM receives it (many backends
+     * preserve the start of the context). Then a clear delimiter and the user request + selection.
      */
     public static String buildUserMessage(String selectionContext, String modelXml, String prompt) {
         StringBuilder sb = new StringBuilder();
+        if (modelXml != null && !modelXml.isEmpty()) {
+            sb.append("ArchiMate model (Open Exchange XML):\n\n").append(modelXml).append("\n\n");
+        }
+        sb.append("--- END OF MODEL ---\n\n");
         sb.append("User request: ").append(prompt != null ? prompt : "").append("\n\n");
         if (selectionContext != null && !selectionContext.isEmpty()) {
-            sb.append(selectionContext).append("\n\n");
-        }
-        if (modelXml != null && !modelXml.isEmpty()) {
-            sb.append("Supplied ArchiMate model (XML):\n\n").append(modelXml);
+            sb.append(selectionContext);
         }
         return sb.toString();
     }

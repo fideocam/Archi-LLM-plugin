@@ -63,17 +63,19 @@ public class SelectionInPromptTest {
         assertTrue("Prompt to LLM must contain diagram name", userMessage.contains("Application Overview"));
     }
 
-    /** User request appears first in the message so the LLM sees the task even if the tail (e.g. XML) is truncated by context limits. */
+    /** Model XML appears first in the message so the LLM receives the ArchiMate model; then "--- END OF MODEL ---", then user request and selection. */
     @Test
-    public void userRequestAppearsFirstThenSelectionThenXml() {
+    public void modelXmlFirstThenUserRequest() {
         String selectionContext = "Current selection in the model:\n- Folder \"Technology\"\n";
         String prompt = "add a node";
         String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, "<model/>", prompt);
+        int modelLabel = userMessage.indexOf("ArchiMate model (Open Exchange XML):");
+        int endOfModel = userMessage.indexOf("--- END OF MODEL ---");
         int requestPos = userMessage.indexOf("User request: " + prompt);
-        int selectionPos = userMessage.indexOf("Current selection in the model:");
+        assertTrue("Model XML section must appear in message", modelLabel >= 0);
+        assertTrue("End-of-model delimiter must appear", endOfModel >= 0);
         assertTrue("User request must appear in message", requestPos >= 0);
-        assertTrue("Selection context must appear in message", selectionPos >= 0);
-        assertTrue("User request must appear first so LLM sees the task if context is truncated",
-                requestPos < selectionPos);
+        assertTrue("Model must appear before end delimiter", modelLabel < endOfModel);
+        assertTrue("User request must appear after end-of-model", requestPos > endOfModel);
     }
 }

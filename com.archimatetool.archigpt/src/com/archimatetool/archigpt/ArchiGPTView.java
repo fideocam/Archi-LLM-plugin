@@ -399,13 +399,21 @@ public class ArchiGPTView extends ViewPart {
                 : "";
         int fullXmlLength = model != null ? ModelContextToXml.toXml(model).length() : 0;
 
-        // Show exactly what we send in the GUI so the user can verify
+        // Show exactly what we send in the GUI so the user can verify the model is included
+        int xmlLen = modelXmlForRequest != null ? modelXmlForRequest.length() : 0;
         StringBuilder summary = new StringBuilder();
+        summary.append("Payload order: model XML first, then your request (so the LLM receives the model).\n\n");
         summary.append("Prompt: ").append(prompt).append("\n\n");
         summary.append("Selection context: ").append(selectionContext != null && !selectionContext.isEmpty() ? selectionContext.trim() : "(none)").append("\n\n");
-        summary.append("Model XML: ").append(modelXmlForRequest != null ? modelXmlForRequest.length() : 0).append(" characters sent (see box below).");
-        if (fullXmlLength > (modelXmlForRequest != null ? modelXmlForRequest.length() : 0)) {
-            summary.append(" [Full model is ").append(fullXmlLength).append(" chars; truncated so the LLM receives the message.]");
+        summary.append("Model XML: ").append(xmlLen).append(" characters sent (see box below). ");
+        if (xmlLen > 0 && modelXmlForRequest != null) {
+            String preview = modelXmlForRequest.length() > 120 ? modelXmlForRequest.substring(0, 120) + "…" : modelXmlForRequest;
+            summary.append("Starts with: ").append(preview.replace("\n", " "));
+        } else {
+            summary.append("(No model open or model empty — open an ArchiMate model so its XML is sent to the LLM.)");
+        }
+        if (fullXmlLength > xmlLen) {
+            summary.append("\n[Full model is ").append(fullXmlLength).append(" chars; truncated so the LLM receives the message.]");
         }
         if (whatWasSentSummaryText != null && !whatWasSentSummaryText.isDisposed()) {
             whatWasSentSummaryText.setText(summary.toString());
@@ -418,6 +426,8 @@ public class ArchiGPTView extends ViewPart {
         final IArchimateDiagramModel targetDiagram = resolveTargetDiagram(selectionToUse, model, window);
 
         final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXmlForRequest, prompt);
+        final int totalPayloadChars = userMessage != null ? userMessage.length() : 0;
+        final int xmlCharsSent = xmlLen;
 
         final Text responseWidget = responseText;
         userRequestedCancel = false;
@@ -534,7 +544,8 @@ public class ArchiGPTView extends ViewPart {
                             + (raw != null ? "\n\nRaw LLM response:\n" + truncate(raw, 4000) : "");
                 }
                 String responseOnly = toShow != null ? toShow : "";
-                finishRequest(responseOnly);
+                String verification = "Sent to LLM: " + totalPayloadChars + " chars total (" + xmlCharsSent + " chars model XML). ---\n\n";
+                finishRequest(verification + responseOnly);
                 return Status.OK_STATUS;
             }
         };
