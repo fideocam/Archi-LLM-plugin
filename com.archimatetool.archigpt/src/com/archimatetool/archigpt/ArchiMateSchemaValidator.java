@@ -5,9 +5,7 @@
 package com.archimatetool.archigpt;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import org.eclipse.emf.ecore.EClass;
 
@@ -15,7 +13,8 @@ import com.archimatetool.model.IArchimatePackage;
 
 /**
  * Validates ArchiMateLLMResult: element and relationship types must exist in
- * ArchiMate 3.2 (IArchimatePackage), and relationship source/target must reference element ids.
+ * ArchiMate 3.2 (IArchimatePackage). Relationship source/target must be non-empty;
+ * they may refer to elements in this response or to existing model elements (resolved at import).
  * Normalizes type names from spec/LLM (e.g. "TechnologyNode") to Archi EClass names (e.g. "Node").
  */
 @SuppressWarnings("nls")
@@ -50,7 +49,6 @@ public final class ArchiMateSchemaValidator {
      */
     public static List<String> validate(ArchiMateLLMResult result) {
         List<String> errors = new ArrayList<>();
-        Set<String> elementIds = new HashSet<>();
 
         for (ArchiMateLLMResult.ElementSpec e : result.getElements()) {
             if (e.getId() == null || e.getId().isEmpty()) {
@@ -68,9 +66,7 @@ public final class ArchiMateSchemaValidator {
                         ? ". Use the \"diagram\" object for a new view (not an element type)"
                         : "";
                 errors.add("Invalid ArchiMate element type: " + e.getType() + " (id=" + e.getId() + ")" + hint);
-                continue;
             }
-            elementIds.add(e.getId());
         }
 
         for (ArchiMateLLMResult.RelationshipSpec r : result.getRelationships()) {
@@ -90,13 +86,6 @@ public final class ArchiMateSchemaValidator {
             }
             if (r.getTarget() == null || r.getTarget().isEmpty()) {
                 errors.add("Relationship missing target: type=" + r.getType());
-                continue;
-            }
-            if (!elementIds.contains(r.getSource())) {
-                errors.add("Relationship source id not found: " + r.getSource() + " (type=" + r.getType() + ")");
-            }
-            if (!elementIds.contains(r.getTarget())) {
-                errors.add("Relationship target id not found: " + r.getTarget() + " (type=" + r.getType() + ")");
             }
         }
 

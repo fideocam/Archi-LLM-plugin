@@ -92,11 +92,19 @@ public final class ArchiMateLLMImporter {
             if (rClass == null || !IArchimatePackage.eINSTANCE.getArchimateRelationship().isSuperTypeOf(rClass)) {
                 continue;
             }
-            IArchimateElement source = (IArchimateElement) idToConcept.get(r.getSource());
-            IArchimateElement target = (IArchimateElement) idToConcept.get(r.getTarget());
-            if (source == null || target == null) {
+            IArchimateConcept sourceConcept = idToConcept.get(r.getSource());
+            if (sourceConcept == null) {
+                sourceConcept = findConceptById(model, r.getSource());
+            }
+            IArchimateConcept targetConcept = idToConcept.get(r.getTarget());
+            if (targetConcept == null) {
+                targetConcept = findConceptById(model, r.getTarget());
+            }
+            if (!(sourceConcept instanceof IArchimateElement) || !(targetConcept instanceof IArchimateElement)) {
                 continue;
             }
+            IArchimateElement source = (IArchimateElement) sourceConcept;
+            IArchimateElement target = (IArchimateElement) targetConcept;
             IArchimateRelationship rel = (IArchimateRelationship) IArchimateFactory.eINSTANCE.create(rClass);
             rel.setName(r.getName() != null ? r.getName() : "");
             if (r.getId() != null && !r.getId().isEmpty()) {
@@ -266,13 +274,18 @@ public final class ArchiMateLLMImporter {
 
         Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
         for (ArchiMateLLMResult.DiagramNodeSpec node : spec.getNodes()) {
-            IArchimateConcept concept = idToConcept.get(node.getElementId());
+            String elementId = node.getElementId();
+            if (elementId == null || elementId.isEmpty()) continue;
+            IArchimateConcept concept = idToConcept.get(elementId);
+            if (concept == null) {
+                concept = findConceptById(model, elementId);
+            }
             if (!(concept instanceof IArchimateElement)) continue;
             IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
             dmo.setArchimateElement((IArchimateElement) concept);
             dmo.setBounds(node.getX(), node.getY(), node.getWidth(), node.getHeight());
             diagram.getChildren().add(dmo);
-            elementIdToDiagramObject.put(node.getElementId(), dmo);
+            elementIdToDiagramObject.put(elementId, dmo);
         }
 
         for (ArchiMateLLMResult.DiagramConnectionSpec connSpec : spec.getConnections()) {

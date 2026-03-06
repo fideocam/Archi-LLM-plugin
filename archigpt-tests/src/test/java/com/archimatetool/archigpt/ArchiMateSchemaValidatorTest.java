@@ -84,7 +84,8 @@ public class ArchiMateSchemaValidatorTest {
     }
 
     @Test
-    public void validateFaulty_relationshipSourceNotFound_returnsError() {
+    public void validate_relationshipSourceOrTargetNotInResponse_passes() {
+        // Source/target may refer to existing model elements (resolved at import); validator only requires non-empty.
         ArchiMateLLMResult result = new ArchiMateLLMResult();
         ArchiMateLLMResult.ElementSpec e = new ArchiMateLLMResult.ElementSpec();
         e.setType("BusinessActor");
@@ -98,12 +99,11 @@ public class ArchiMateSchemaValidatorTest {
         result.getRelationships().add(r);
 
         List<String> errors = ArchiMateSchemaValidator.validate(result);
-        assertFalse(errors.isEmpty());
-        assertTrue(errors.stream().anyMatch(msg -> msg.contains("source id not found") && msg.contains("e99")));
+        assertTrue("Relationship with source not in response is allowed (may exist in model)", errors.isEmpty());
     }
 
     @Test
-    public void validateFaulty_relationshipTargetNotFound_returnsError() {
+    public void validate_relationshipTargetNotInResponse_passes() {
         ArchiMateLLMResult result = new ArchiMateLLMResult();
         ArchiMateLLMResult.ElementSpec e = new ArchiMateLLMResult.ElementSpec();
         e.setType("BusinessActor");
@@ -117,8 +117,7 @@ public class ArchiMateSchemaValidatorTest {
         result.getRelationships().add(r);
 
         List<String> errors = ArchiMateSchemaValidator.validate(result);
-        assertFalse(errors.isEmpty());
-        assertTrue(errors.stream().anyMatch(msg -> msg.contains("target id not found") && msg.contains("e99")));
+        assertTrue("Relationship with target not in response is allowed (may exist in model)", errors.isEmpty());
     }
 
     @Test

@@ -507,8 +507,9 @@ public class ArchiGPTView extends ViewPart {
                     }
                     updateStatus("Response received. Parsing and validating…");
                     ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(raw);
+                    boolean hasDiagram = parsed.getDiagram() != null && parsed.getDiagram().getName() != null && !parsed.getDiagram().getName().isEmpty();
                     boolean hasImportData = !parsed.getElements().isEmpty() || !parsed.getRelationships().isEmpty()
-                            || !parsed.getRemoveElementIds().isEmpty() || !parsed.getRemoveRelationshipIds().isEmpty();
+                            || !parsed.getRemoveElementIds().isEmpty() || !parsed.getRemoveRelationshipIds().isEmpty() || hasDiagram;
                     if (parsed.getError() != null && !parsed.getError().isEmpty()) {
                         toShow = "LLM reported: " + parsed.getError() + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                     } else if (!hasImportData) {
@@ -548,7 +549,8 @@ public class ArchiGPTView extends ViewPart {
                                     String action = "Imported into model \"" + model.getName() + "\"" + where;
                                     if (addEl > 0 || addRel > 0) action += ": " + addEl + " elements, " + addRel + " relationships added.";
                                     if (remEl > 0 || remRel > 0) action += (addEl > 0 || addRel > 0 ? " " : ": ") + "Removed " + remEl + " elements, " + remRel + " relationships.";
-                                    importMessage[0] = (addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0) ? action : "No changes applied.";
+                                    boolean diagramCreated = resultToImport.getDiagram() != null && resultToImport.getDiagram().getName() != null && !resultToImport.getDiagram().getName().isEmpty();
+                                    importMessage[0] = (addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0 || diagramCreated) ? action : "No changes applied.";
                                 }
                             });
                             toShow = importMessage[0] + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
