@@ -33,7 +33,7 @@ To build from source, see [build.md](build.md).
    Quit Archi completely before installing the plugin.
 
 3. **Install the plugin** (either method):
-   - **Via Help → Manage Archi Plug-ins:** Use the packaged `export/ArchiGPT.archiplugin` file. In Archi choose **Help → Manage Archi Plug-ins**, click **Install new**, select `ArchiGPT.archiplugin`, then restart Archi. The `.archiplugin` file is a zip that contains the magic entry `archi-plugin` plus the plugin JAR (create it with `scripts/create-archiplugin.sh` after building).
+   - **Via Help → Manage Archi Plug-ins:** Use the packaged `export/ArchiGPT.archiplugin` file. In Archi choose **Help → Manage Archi Plug-ins**, click **Install new**, select `ArchiGPT.archiplugin`, then restart Archi. The `./push` script builds the plugin and then runs `scripts/create-archiplugin.sh` so `export/ArchiGPT.archiplugin` is updated and included in the commit.
    - **Manual:** Copy the JAR into Archi's dropins folder. Create the folder if it does not exist:
 
    | OS      | Dropins folder |

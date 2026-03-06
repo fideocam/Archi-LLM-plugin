@@ -40,6 +40,8 @@ You need a p2 repository that contains Archi’s `com.archimatetool.editor` bund
 
    **Where the p2 repo is:** The build *default* looks for a sibling folder `archi` next to this repo (i.e. `../archi/.../target/repository`). If your Archi source lives elsewhere (e.g. in OneDrive), pass `-Darchi.repo.path=` with the full path to the `repository` folder inside the Archi product build. You can also create a symlink `archi` pointing at your Archi clone so the default path works.
 
+   **Update export/ArchiGPT.archiplugin:** After a successful Maven build, run `./scripts/create-archiplugin.sh` from the repo root to refresh `export/ArchiGPT.archiplugin` (the file used by **Help → Manage Archi Plug-ins**). If you use the local `./push` script, it runs the build and then this script so the export is updated before commit/push.
+
 ### If you only have an Archi installation
 
 Maven/Tycho cannot use a plain “plugins” folder; it needs a p2 repository. You can:
