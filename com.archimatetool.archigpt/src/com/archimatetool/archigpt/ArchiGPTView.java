@@ -69,6 +69,10 @@ public class ArchiGPTView extends ViewPart {
     private Button sendButton;
     private Button stopButton;
     private Button saveAsButton;
+    private Button verboseDebugCheckbox;
+    private Label buildLabel;
+    private Label whatWasSentLabel;
+    private Label xmlPreviewLabel;
     private Job currentJob;
     /** Cached selection from model tree/diagram so it is still used when ArchiGPT view has focus. */
     private volatile IStructuredSelection lastModelSelection;
@@ -86,7 +90,7 @@ public class ArchiGPTView extends ViewPart {
         layout.verticalSpacing = 8;
         parent.setLayout(layout);
 
-        Label buildLabel = new Label(parent, SWT.NONE);
+        buildLabel = new Label(parent, SWT.NONE);
         buildLabel.setText("ArchiGPT " + getBuildVersion());
         buildLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
@@ -143,6 +147,17 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
+        verboseDebugCheckbox = new Button(parent, SWT.CHECK);
+        verboseDebugCheckbox.setText("Verbose debug");
+        verboseDebugCheckbox.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        verboseDebugCheckbox.setSelection(false);
+        verboseDebugCheckbox.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                setVerboseDebugVisible(verboseDebugCheckbox.getSelection());
+            }
+        });
+
         Composite responseHeader = new Composite(parent, SWT.NONE);
         responseHeader.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         GridLayout responseHeaderLayout = new GridLayout(2, false);
@@ -163,7 +178,7 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
-        Label whatWasSentLabel = new Label(parent, SWT.NONE);
+        whatWasSentLabel = new Label(parent, SWT.NONE);
         whatWasSentLabel.setText("What was sent to the LLM (last request):");
         whatWasSentLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
@@ -174,7 +189,7 @@ public class ArchiGPTView extends ViewPart {
         whatWasSentSummaryText.setLayoutData(whatWasSentData);
         whatWasSentSummaryText.setMessage("(Prompt, selection, and XML length appear here when you click Ask ArchiGPT)");
 
-        Label xmlPreviewLabel = new Label(parent, SWT.NONE);
+        xmlPreviewLabel = new Label(parent, SWT.NONE);
         xmlPreviewLabel.setText("Model XML sent to LLM (exact payload):");
         xmlPreviewLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
@@ -201,6 +216,20 @@ public class ArchiGPTView extends ViewPart {
             }
         };
         getViewSite().getPage().addSelectionListener(selectionListener);
+
+        setVerboseDebugVisible(false);
+    }
+
+    private void setVerboseDebugVisible(boolean visible) {
+        if (buildLabel != null && !buildLabel.isDisposed()) buildLabel.setVisible(visible);
+        if (whatWasSentLabel != null && !whatWasSentLabel.isDisposed()) whatWasSentLabel.setVisible(visible);
+        if (whatWasSentSummaryText != null && !whatWasSentSummaryText.isDisposed()) whatWasSentSummaryText.setVisible(visible);
+        if (xmlPreviewLabel != null && !xmlPreviewLabel.isDisposed()) xmlPreviewLabel.setVisible(visible);
+        if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) xmlPreviewText.setVisible(visible);
+        if (buildLabel != null && !buildLabel.isDisposed()) {
+            Composite parent = buildLabel.getParent();
+            if (parent != null && !parent.isDisposed()) parent.layout(true, true);
+        }
     }
 
     @Override
