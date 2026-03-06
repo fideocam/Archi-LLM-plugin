@@ -61,7 +61,8 @@ public final class ArchiMateLLMImporter {
         final int gap = 25;
 
         for (ArchiMateLLMResult.ElementSpec e : result.getElements()) {
-            EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(e.getType());
+            String normalizedType = ArchiMateSchemaValidator.normalizeElementType(e.getType());
+            EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(normalizedType);
             if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
                 continue;
             }
@@ -86,7 +87,8 @@ public final class ArchiMateLLMImporter {
         }
 
         for (ArchiMateLLMResult.RelationshipSpec r : result.getRelationships()) {
-            EClass rClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(r.getType());
+            String relType = ArchiMateSchemaValidator.normalizeRelationshipType(r.getType());
+            EClass rClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(relType);
             if (rClass == null || !IArchimatePackage.eINSTANCE.getArchimateRelationship().isSuperTypeOf(rClass)) {
                 continue;
             }

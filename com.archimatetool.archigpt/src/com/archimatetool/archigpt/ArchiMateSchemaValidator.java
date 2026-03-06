@@ -16,11 +16,34 @@ import com.archimatetool.model.IArchimatePackage;
 /**
  * Validates ArchiMateLLMResult: element and relationship types must exist in
  * ArchiMate 3.2 (IArchimatePackage), and relationship source/target must reference element ids.
+ * Normalizes type names from spec/LLM (e.g. "TechnologyNode") to Archi EClass names (e.g. "Node").
  */
 @SuppressWarnings("nls")
 public final class ArchiMateSchemaValidator {
 
     private ArchiMateSchemaValidator() {}
+
+    /**
+     * Maps LLM/spec type names to IArchimatePackage EClass names. Archi EClass names are PascalCase with no spaces.
+     * Handles: "Technology Node" or "TechnologyNode" -> "Node"; "Business Actor" -> "BusinessActor"; etc.
+     */
+    public static String normalizeElementType(String type) {
+        if (type == null || type.isEmpty()) return type;
+        String t = type.trim().replaceAll("\\s+", "");
+        if (t.isEmpty()) return type;
+        // Archi uses "Node" for Technology layer node, not "TechnologyNode"
+        if ("TechnologyNode".equals(t)) return "Node";
+        return t;
+    }
+
+    /**
+     * Maps LLM/spec relationship type names to IArchimatePackage EClass names (PascalCase, no spaces).
+     */
+    public static String normalizeRelationshipType(String type) {
+        if (type == null || type.isEmpty()) return type;
+        String t = type.trim().replaceAll("\\s+", "");
+        return t.isEmpty() ? type : t;
+    }
 
     /**
      * Validate the parsed result. Returns a list of error messages (empty if valid).
@@ -38,7 +61,8 @@ public final class ArchiMateSchemaValidator {
                 errors.add("Element missing type: id=" + e.getId());
                 continue;
             }
-            EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(e.getType());
+            String normalizedType = normalizeElementType(e.getType());
+            EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(normalizedType);
             if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
                 String hint = "Diagram".equalsIgnoreCase(e.getType()) || "View".equalsIgnoreCase(e.getType())
                         ? ". Use the \"diagram\" object for a new view (not an element type)"
@@ -54,7 +78,8 @@ public final class ArchiMateSchemaValidator {
                 errors.add("Relationship missing type: source=" + r.getSource() + " target=" + r.getTarget());
                 continue;
             }
-            EClass rClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(r.getType());
+            String relType = normalizeRelationshipType(r.getType());
+            EClass rClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(relType);
             if (rClass == null || !IArchimatePackage.eINSTANCE.getArchimateRelationship().isSuperTypeOf(rClass)) {
                 errors.add("Invalid ArchiMate relationship type: " + r.getType());
                 continue;
