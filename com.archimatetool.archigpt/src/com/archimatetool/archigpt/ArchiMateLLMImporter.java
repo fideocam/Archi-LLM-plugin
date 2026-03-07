@@ -113,8 +113,11 @@ public final class ArchiMateLLMImporter {
             }
             rel.setSource(source);
             rel.setTarget(target);
-            IFolder folder = targetFolder != null ? targetFolder : model.getDefaultFolderForObject(rel);
-            folder.getElements().add(rel);
+            // Always put relationships in the model's Relations folder, not in element folders (e.g. Technology, Strategy)
+            IFolder relFolder = model.getDefaultFolderForObject(rel);
+            if (relFolder != null) {
+                relFolder.getElements().add(rel);
+            }
         }
 
         if (result.getDiagram() != null && result.getDiagram().getName() != null && !result.getDiagram().getName().isEmpty()) {
@@ -270,13 +273,7 @@ public final class ArchiMateLLMImporter {
         if (spec.getViewpoint() != null && !spec.getViewpoint().isEmpty()) {
             diagram.setViewpoint(spec.getViewpoint());
         }
-        // Link diagram to model and add to model's list (required for view to appear in Archi)
-        try {
-            java.lang.reflect.Method setModel = diagram.getClass().getMethod("setArchimateModel", IArchimateModel.class);
-            setModel.invoke(diagram, model);
-        } catch (Throwable t) {
-            // ignore if API not available
-        }
+        // Add to model's diagram list (EMF sets diagram's archimateModel when added; calling setArchimateModel first can break this)
         if (model.getDiagramModels() != null) {
             model.getDiagramModels().add(diagram);
         }
