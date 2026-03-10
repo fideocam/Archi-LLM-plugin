@@ -40,4 +40,18 @@ public class ArchiMateSystemPromptTest {
         assertTrue("Should describe relationships array", p.contains("\"relationships\""));
         assertTrue("Should mention error field", p.contains("\"error\""));
     }
+
+    @Test
+    public void systemPrompt_mentionsDiagramForNewView() {
+        String p = ArchiMateSystemPrompt.SYSTEM_PROMPT;
+        assertTrue("Should mention diagram object for new view", p.contains("diagram"));
+        assertTrue("Should mention diagram for create/generate", p.contains("NEW DIAGRAM") || p.contains("new view"));
+    }
+
+    @Test
+    public void systemPrompt_mentionsFragmentAndMultipleElements() {
+        String p = ArchiMateSystemPrompt.SYSTEM_PROMPT;
+        assertTrue("Should mention fragment or multiple elements for process/service", p.contains("multiple") || p.contains("fragment"));
+        assertTrue("Should mention removeElementIds/removeRelationshipIds", p.contains("removeElementIds") && p.contains("removeRelationshipIds"));
+    }
 }

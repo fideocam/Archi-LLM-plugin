@@ -150,4 +150,32 @@ public class ArchiMateSchemaValidatorTest {
         List<String> errors = ArchiMateSchemaValidator.validate(result);
         assertTrue(errors.isEmpty());
     }
+
+    @Test
+    public void normalizeElementType_TechnologyNode_passesValidation() {
+        // Validator normalizes "TechnologyNode" to "Node" (Archi EClass name)
+        ArchiMateLLMResult result = new ArchiMateLLMResult();
+        ArchiMateLLMResult.ElementSpec e = new ArchiMateLLMResult.ElementSpec();
+        e.setType("TechnologyNode");
+        e.setName("Server");
+        e.setId("n1");
+        result.getElements().add(e);
+
+        List<String> errors = ArchiMateSchemaValidator.validate(result);
+        assertTrue("TechnologyNode should be accepted (normalized to Node): " + errors, errors.isEmpty());
+    }
+
+    @Test
+    public void normalizeElementType_elementTypeWithSpaces_passesValidation() {
+        // Validator strips spaces so "Business Actor" -> "BusinessActor"
+        ArchiMateLLMResult result = new ArchiMateLLMResult();
+        ArchiMateLLMResult.ElementSpec e = new ArchiMateLLMResult.ElementSpec();
+        e.setType("Business Actor");
+        e.setName("Customer");
+        e.setId("e1");
+        result.getElements().add(e);
+
+        List<String> errors = ArchiMateSchemaValidator.validate(result);
+        assertTrue("Type with spaces should be accepted (normalized): " + errors, errors.isEmpty());
+    }
 }

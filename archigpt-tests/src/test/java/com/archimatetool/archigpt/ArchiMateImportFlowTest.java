@@ -95,4 +95,73 @@ public class ArchiMateImportFlowTest {
         }
         return total;
     }
+
+    @Test
+    public void importWithTargetFolder_relationshipsGoToRelationsFolderNotTargetFolder() throws Exception {
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(GOOD_LLM_RESPONSE);
+        List<String> errors = ArchiMateSchemaValidator.validate(parsed);
+        assertTrue("Validation should pass: " + errors, errors.isEmpty());
+
+        Class<?> factoryClass = Class.forName("com.archimatetool.model.IArchimateFactory");
+        Object factory = factoryClass.getField("eINSTANCE").get(null);
+        Object model = factoryClass.getMethod("createArchimateModel").invoke(factory);
+        model.getClass().getMethod("setDefaults").invoke(model);
+
+        Object folders = model.getClass().getMethod("getFolders").invoke(model);
+        Object targetFolder = null;
+        for (Object f : (Iterable<?>) folders) {
+            Object name = f.getClass().getMethod("getName").invoke(f);
+            if (name != null && name.toString().toLowerCase().contains("business")) {
+                targetFolder = f;
+                break;
+            }
+        }
+        if (targetFolder == null) {
+            targetFolder = ((java.util.List<?>) folders).get(0);
+        }
+
+        Method importMethod = ArchiMateLLMImporter.class.getMethod("importIntoModel", ArchiMateLLMResult.class,
+                Class.forName("com.archimatetool.model.IArchimateModel"), Class.forName("com.archimatetool.model.IFolder"), Class.forName("com.archimatetool.model.IArchimateDiagramModel"));
+        importMethod.invoke(null, parsed, model, targetFolder, null);
+
+        Object targetFolderElements = targetFolder.getClass().getMethod("getElements").invoke(targetFolder);
+        int relationshipsInTargetFolder = 0;
+        for (Object el : (Iterable<?>) targetFolderElements) {
+            if (el.getClass().getSimpleName().toLowerCase().contains("relationship")) {
+                relationshipsInTargetFolder++;
+            }
+        }
+        assertTrue("Relationships should not be in element folder (Business); they go to Relations folder", relationshipsInTargetFolder == 0);
+    }
+
+    @Test
+    public void importWithDiagram_createsNewViewInModel() throws Exception {
+        String jsonWithDiagram = "{\"elements\":[{\"type\":\"BusinessActor\",\"name\":\"A\",\"id\":\"a1\"}],\"relationships\":[],"
+                + "\"diagram\":{\"name\":\"Test View\",\"viewpoint\":\"\",\"nodes\":[{\"elementId\":\"a1\",\"x\":50,\"y\":50,\"width\":120,\"height\":55}],\"connections\":[]}}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(jsonWithDiagram);
+        List<String> errors = ArchiMateSchemaValidator.validate(parsed);
+        assertTrue("Validation should pass: " + errors, errors.isEmpty());
+
+        Class<?> factoryClass = Class.forName("com.archimatetool.model.IArchimateFactory");
+        Object factory = factoryClass.getField("eINSTANCE").get(null);
+        Object model = factoryClass.getMethod("createArchimateModel").invoke(factory);
+        model.getClass().getMethod("setDefaults").invoke(model);
+
+        Method importMethod = ArchiMateLLMImporter.class.getMethod("importIntoModel", ArchiMateLLMResult.class, Class.forName("com.archimatetool.model.IArchimateModel"), Class.forName("com.archimatetool.model.IFolder"), Class.forName("com.archimatetool.model.IArchimateDiagramModel"));
+        importMethod.invoke(null, parsed, model, null, null);
+
+        Object diagramModels = model.getClass().getMethod("getDiagramModels").invoke(model);
+        assertNotNull(diagramModels);
+        int count = ((java.util.List<?>) diagramModels).size();
+        assertTrue("Model should have at least one diagram (new view) after import", count >= 1);
+        boolean found = false;
+        for (Object dm : (Iterable<?>) diagramModels) {
+            Object name = dm.getClass().getMethod("getName").invoke(dm);
+            if ("Test View".equals(name != null ? name.toString() : null)) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue("Diagram named 'Test View' should exist in model", found);
+    }
 }

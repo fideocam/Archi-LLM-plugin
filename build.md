@@ -44,6 +44,12 @@ You need a p2 repository that contains Archi’s `com.archimatetool.editor` bund
    mvn clean package -pl com.archimatetool.archigpt -P with-archi -DskipTests
    ```
 
+   **Run tests:** (requires Archi p2 repo as above; tests that need Archi classes are skipped if not on classpath)
+   ```bash
+   export MAVEN_OPTS="-Djdk.xml.maxGeneralEntitySizeLimit=2147483647 -Djdk.xml.totalEntitySizeLimit=2147483647"
+   mvn clean test -P with-archi
+   ```
+
    **Archi in a different path:** Pass the path to the Archi product p2 repository:
    ```bash
    mvn clean package -P with-archi -Darchi.repo.path=/path/to/archi/com.archimatetool.editor.product/target/repository
