@@ -83,6 +83,8 @@ To create or update it manually (e.g. after a previous build), run from the repo
 
 (or `sh scripts/create-archiplugin.sh` if the script is not executable). This produces `export/ArchiGPT.archiplugin` for **Help → Manage Archi Plug-ins**.
 
+**Auto-build on push:** To have the plugin built and the export updated every time you run `git push`, install the pre-push hook: `cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push`. The hook runs the Maven build and refreshes `export/ArchiGPT.archiplugin`; if the export changed, it commits it before pushing. Skip the hook once with `git push --no-verify`.
+
 ### If you only have an Archi installation (no source)
 
 Maven/Tycho requires a p2 repository, not a plain `plugins` folder. You can:

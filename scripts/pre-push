@@ -1,0 +1,42 @@
+#!/bin/sh
+# Pre-push hook: build ArchiGPT plugin and update export/ArchiGPT.archiplugin before pushing.
+# Install: cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+# Uses same ARCHI_REPO_PATH default as ./push (sibling ../archi/...).
+
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+ARCHI_REPO_PATH="${ARCHI_REPO_PATH:-$ROOT/../archi/com.archimatetool.editor.product/target/repository}"
+if [ -d "$ARCHI_REPO_PATH" ]; then
+  ARCHI_REPO_PATH="$(cd "$ARCHI_REPO_PATH" && pwd)"
+fi
+
+export MAVEN_OPTS="${MAVEN_OPTS:--Djdk.xml.maxGeneralEntitySizeLimit=2147483647 -Djdk.xml.totalEntitySizeLimit=2147483647}"
+
+echo "Pre-push: building plugin..."
+if ! mvn clean package -pl com.archimatetool.archigpt -P with-archi -DskipTests -Darchi.repo.path="$ARCHI_REPO_PATH" -q; then
+  echo "Pre-push: build failed; push aborted. Fix the build or skip with: git push --no-verify"
+  exit 1
+fi
+
+JAR="$ROOT/com.archimatetool.archigpt/target/com.archimatetool.archigpt-1.0.0-SNAPSHOT.jar"
+OUT="$ROOT/export/ArchiGPT.archiplugin"
+if [ -f "$JAR" ]; then
+  mkdir -p "$ROOT/export"
+  python3 - "$OUT" "$JAR" << 'PY'
+import zipfile, os, sys
+out_path, jar_path = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as z:
+    z.writestr('archi-plugin', '')
+    z.write(jar_path, os.path.basename(jar_path))
+PY
+fi
+
+if [ -n "$(git status -s export/ArchiGPT.archiplugin 2>/dev/null)" ]; then
+  git add export/ArchiGPT.archiplugin
+  git commit -m "Build: update export/ArchiGPT.archiplugin"
+  echo "Pre-push: committed updated export."
+fi
+
+exit 0
