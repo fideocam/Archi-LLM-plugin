@@ -22,6 +22,7 @@ import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IDiagramModelConnection;
 import com.archimatetool.model.IFolder;
+import com.archimatetool.model.FolderType;
 
 /**
  * Adds elements and relationships from a validated ArchiMateLLMResult to an existing IArchimateModel.
@@ -273,15 +274,19 @@ public final class ArchiMateLLMImporter {
         if (spec.getViewpoint() != null && !spec.getViewpoint().isEmpty()) {
             diagram.setViewpoint(spec.getViewpoint());
         }
-        // Add to model's diagram list so the new view appears in the tree
-        if (model.getDiagramModels() != null) {
-            model.getDiagramModels().add(diagram);
-        }
-        // Ensure diagram's archimateModel reference is set (some Archi versions need this for the view to show)
-        try {
-            diagram.getClass().getMethod("setArchimateModel", IArchimateModel.class).invoke(diagram, model);
-        } catch (Exception ignored) {
-            // EMF may have set it via the list add
+        // Archi stores diagrams in the DIAGRAMS folder, not in getDiagramModels() (which returns a copy).
+        IFolder diagramsFolder = model.getFolder(FolderType.DIAGRAMS);
+        if (diagramsFolder != null) {
+            diagramsFolder.getElements().add(diagram);
+        } else {
+            // Fallback if folder structure not initialized
+            if (model.getDiagramModels() != null) {
+                model.getDiagramModels().add(diagram);
+            }
+            try {
+                diagram.getClass().getMethod("setArchimateModel", IArchimateModel.class).invoke(diagram, model);
+            } catch (Exception ignored) {
+            }
         }
 
         Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
