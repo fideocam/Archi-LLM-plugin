@@ -51,6 +51,10 @@ public final class ArchiMateSchemaValidator {
         List<String> errors = new ArrayList<>();
 
         for (ArchiMateLLMResult.ElementSpec e : result.getElements()) {
+            // View and Diagram are not ArchiMate element types; the importer skips them. Do not fail validation.
+            if ("View".equalsIgnoreCase(e.getType()) || "Diagram".equalsIgnoreCase(e.getType())) {
+                continue;
+            }
             if (e.getId() == null || e.getId().isEmpty()) {
                 errors.add("Element missing id: type=" + e.getType() + ", name=" + e.getName());
                 continue;
@@ -62,10 +66,7 @@ public final class ArchiMateSchemaValidator {
             String normalizedType = normalizeElementType(e.getType());
             EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(normalizedType);
             if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
-                String hint = "Diagram".equalsIgnoreCase(e.getType()) || "View".equalsIgnoreCase(e.getType())
-                        ? ". Use the \"diagram\" object for a new view (not an element type)"
-                        : "";
-                errors.add("Invalid ArchiMate element type: " + e.getType() + " (id=" + e.getId() + ")" + hint);
+                errors.add("Invalid ArchiMate element type: " + e.getType() + " (id=" + e.getId() + ")");
             }
         }
 

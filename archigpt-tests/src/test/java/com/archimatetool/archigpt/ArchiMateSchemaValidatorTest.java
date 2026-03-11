@@ -152,6 +152,25 @@ public class ArchiMateSchemaValidatorTest {
     }
 
     @Test
+    public void validate_viewOrDiagramInElements_skippedNoError() {
+        // View and Diagram are not ArchiMate types; validator skips them so import can proceed (importer ignores them too).
+        ArchiMateLLMResult result = new ArchiMateLLMResult();
+        ArchiMateLLMResult.ElementSpec viewEl = new ArchiMateLLMResult.ElementSpec();
+        viewEl.setType("View");
+        viewEl.setName("My View");
+        viewEl.setId("v1");
+        result.getElements().add(viewEl);
+        ArchiMateLLMResult.ElementSpec e = new ArchiMateLLMResult.ElementSpec();
+        e.setType("BusinessActor");
+        e.setName("A");
+        e.setId("e1");
+        result.getElements().add(e);
+
+        List<String> errors = ArchiMateSchemaValidator.validate(result);
+        assertTrue("View in elements should be skipped, not cause validation error: " + errors, errors.isEmpty());
+    }
+
+    @Test
     public void normalizeElementType_TechnologyNode_passesValidation() {
         // Validator normalizes "TechnologyNode" to "Node" (Archi EClass name)
         ArchiMateLLMResult result = new ArchiMateLLMResult();
