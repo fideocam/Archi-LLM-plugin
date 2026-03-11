@@ -54,9 +54,11 @@ public final class ArchiMateLLMResultParser {
             }
         }
 
-        int diagramStart = json.indexOf("\"diagram\"");
-        if (diagramStart >= 0) {
-            int objStart = json.indexOf("{", diagramStart);
+        // Find the "diagram" key (not "diagram" inside a value like "name":"Some diagram")
+        Pattern diagramKeyPattern = Pattern.compile("\"diagram\"\\s*:\\s*\\{");
+        Matcher diagramKeyMatcher = diagramKeyPattern.matcher(json);
+        if (diagramKeyMatcher.find()) {
+            int objStart = diagramKeyMatcher.end() - 1; // position of the "{"
             int objEnd = findMatchingBracket(json, objStart);
             if (objEnd > objStart) {
                 String diagramStr = json.substring(objStart, objEnd + 1);

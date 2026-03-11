@@ -276,6 +276,13 @@ public final class ArchiMateLLMImporter {
         // Add to model's diagram list (EMF sets diagram's archimateModel when added; calling setArchimateModel first can break this)
         if (model.getDiagramModels() != null) {
             model.getDiagramModels().add(diagram);
+        } else {
+            // Fallback when list is null: set container on diagram so it registers with the model (e.g. EMF inverse reference)
+            try {
+                diagram.getClass().getMethod("setArchimateModel", IArchimateModel.class).invoke(diagram, model);
+            } catch (Exception ignored) {
+                // If model still has no diagram list, diagram may not appear in UI
+            }
         }
 
         Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
