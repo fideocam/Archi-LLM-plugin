@@ -164,10 +164,16 @@ public final class ArchiMateLLMResultParser {
     private static String extractJson(String raw) {
         if (raw == null) return "{}";
         String s = raw.trim();
-        int start = s.indexOf('{');
-        if (start >= 0) {
-            int end = findMatchingBracket(s, start);
-            if (end > start) return s.substring(start, end + 1);
+        // Find the top-level JSON object (may be after "3) CHANGES (" or markdown)
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) != '{') continue;
+            int end = findMatchingBracket(s, i);
+            if (end <= i) continue;
+            String candidate = s.substring(i, end + 1);
+            // Must be the CHANGES payload: has "elements" or "diagram" key
+            if (candidate.contains("\"elements\"") || candidate.contains("\"diagram\"")) {
+                return candidate;
+            }
         }
         return s;
     }

@@ -273,16 +273,15 @@ public final class ArchiMateLLMImporter {
         if (spec.getViewpoint() != null && !spec.getViewpoint().isEmpty()) {
             diagram.setViewpoint(spec.getViewpoint());
         }
-        // Add to model's diagram list (EMF sets diagram's archimateModel when added; calling setArchimateModel first can break this)
+        // Add to model's diagram list so the new view appears in the tree
         if (model.getDiagramModels() != null) {
             model.getDiagramModels().add(diagram);
-        } else {
-            // Fallback when list is null: set container on diagram so it registers with the model (e.g. EMF inverse reference)
-            try {
-                diagram.getClass().getMethod("setArchimateModel", IArchimateModel.class).invoke(diagram, model);
-            } catch (Exception ignored) {
-                // If model still has no diagram list, diagram may not appear in UI
-            }
+        }
+        // Ensure diagram's archimateModel reference is set (some Archi versions need this for the view to show)
+        try {
+            diagram.getClass().getMethod("setArchimateModel", IArchimateModel.class).invoke(diagram, model);
+        } catch (Exception ignored) {
+            // EMF may have set it via the list add
         }
 
         Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
