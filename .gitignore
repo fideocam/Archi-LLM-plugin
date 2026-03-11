@@ -11,5 +11,8 @@ target/
 # Build output
 build-output/
 
+# Archi p2 repo (paste product build repository here; can be large)
+p2/
+
 # Local script (machine-specific paths)
 push

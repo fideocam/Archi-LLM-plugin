@@ -21,7 +21,7 @@
     <tycho.version>4.0.8</tycho.version>
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
-    <!-- Path to Archi p2 repo (only used with -P with-archi). Override with -Darchi.repo.path=... -->
+    <!-- Path to Archi p2 repo (only used with -P with-archi). Default: ../archi/... when archi is next to this repo. If archi is one level up (sibling of this repo folder), use -Darchi.repo.path=/full/path/to/archi/.../repository -->
     <archi.repo.path>${project.basedir}/../archi/com.archimatetool.editor.product/target/repository</archi.repo.path>
   </properties>
 
@@ -50,6 +50,28 @@
 
   <build>
     <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>create-archiplugin</id>
+            <phase>package</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <exec executable="python3" failonerror="false">
+                  <arg value="-c"/>
+                  <arg value="import zipfile, os; j='${project.basedir}/com.archimatetool.archigpt/target/com.archimatetool.archigpt-1.0.0-SNAPSHOT.jar'; o='${project.basedir}/export/ArchiGPT.archiplugin'; os.makedirs(os.path.dirname(o), exist_ok=True); z=zipfile.ZipFile(o,'w',zipfile.ZIP_DEFLATED); z.writestr('archi-plugin',''); z.write(j, os.path.basename(j)); z.close(); print('Created', o)"/>
+                </exec>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.eclipse.tycho</groupId>
         <artifactId>tycho-maven-plugin</artifactId>

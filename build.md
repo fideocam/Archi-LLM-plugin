@@ -22,11 +22,12 @@ You need a p2 repository that contains Archi’s `com.archimatetool.editor` bund
 
 ### If you have Archi sources
 
-1. Clone and build Archi:
+1. Clone Archi (if needed) so the Archi source is next to this repo (e.g. `../archi` or `archi/` inside the same parent folder). Then build Archi from the **Archi repo root** (the folder that contains Archi’s `pom.xml` and `com.archimatetool.editor.product/`):
    ```bash
-   cd archi
-   mvn clean package -P product
+   cd path/to/archi
+   mvn clean package -P product -DskipTests
    ```
+   Example if `archi` is next to the plugin repo: `cd ../archi`. Example if you’re in the plugin repo and archi is in `archi/`: `cd archi`.
 
 2. From this repository root, build ArchiGPT:
    ```bash
@@ -54,17 +55,33 @@ You need a p2 repository that contains Archi’s `com.archimatetool.editor` bund
    ```bash
    mvn clean package -P with-archi -Darchi.repo.path=/path/to/archi/com.archimatetool.editor.product/target/repository
    ```
-   By default the build looks for a sibling folder `archi` next to this repo. You can use a symlink if needed.
+   **Archi is a sibling of the plugin repo** (e.g. `Archi-LLM-plugin/archi` and `Archi-LLM-plugin/Archi-LLM-plugin/`): the default `../archi` is resolved from the plugin module, so use the absolute path:
+   ```bash
+   mvn clean package -P with-archi -DskipTests -Darchi.repo.path=/full/path/to/archi/com.archimatetool.editor.product/target/repository
+   ```
+   Example (macOS): `-Darchi.repo.path=$HOME/Desktop/Archi-LLM-plugin/archi/com.archimatetool.editor.product/target/repository`
+
+### Using a p2 folder inside this repo
+
+By default the build looks for a p2 repository in the **`p2/`** folder in this repo. You can copy a valid p2 repo there and run:
+
+```bash
+mvn clean package -P with-archi -DskipTests
+```
+
+**Important:** The **p2 folder from inside the Archi application** (e.g. `Archi.app/Contents/Eclipse/p2`) is the *runtime cache*, not a p2 repository. It does not contain the bundles needed to build the plugin. You need the **product build repository**: when you build Archi from source, it creates a folder like `com.archimatetool.editor.product/target/repository` with **`content.xml`** and **`artifacts.xml`** at the root. Copy that entire folder into this repo as `p2/` (replacing the contents of `p2/`), then build. If you only have an Archi installation and no source, use [Eclipse export](#eclipse-export) instead.
 
 ### Creating the installable .archiplugin
 
-After a successful Maven build, create or update the file used by **Help → Manage Archi Plug-ins**:
+When you run `mvn clean package -P with-archi` from the repo root, the build creates `export/ArchiGPT.archiplugin` automatically after the plugin JAR is built.
+
+To create or update it manually (e.g. after a previous build), run from the repo root:
 
 ```bash
 ./scripts/create-archiplugin.sh
 ```
 
-This produces `export/ArchiGPT.archiplugin`. If you use the local `./push` script (in `.gitignore`), it runs the Maven build and then creates this file before committing and pushing.
+(or `sh scripts/create-archiplugin.sh` if the script is not executable). This produces `export/ArchiGPT.archiplugin` for **Help → Manage Archi Plug-ins**.
 
 ### If you only have an Archi installation (no source)
 
