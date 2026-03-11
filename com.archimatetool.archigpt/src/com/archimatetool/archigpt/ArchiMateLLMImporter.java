@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.eclipse.emf.ecore.EClass;
 import org.eclipse.emf.ecore.EObject;
@@ -30,7 +32,26 @@ import com.archimatetool.model.FolderType;
 @SuppressWarnings("nls")
 public final class ArchiMateLLMImporter {
 
+    /** ArchiMate/Archi identifier format: id- plus 32 hex chars (xs:ID / NCName friendly). */
+    private static final Pattern ARCHIMATE_ID = Pattern.compile("id-[0-9a-fA-F]{32}");
+
     private ArchiMateLLMImporter() {}
+
+    /**
+     * Return a valid ArchiMate identifier (id- + 32 hex). Normalizes hyphenated UUIDs or generates a new id if missing/invalid.
+     */
+    static String ensureArchiMateId(String id) {
+        if (id != null && !id.isEmpty()) {
+            if (ARCHIMATE_ID.matcher(id.trim()).matches()) {
+                return id.trim();
+            }
+            String noHyphens = id.trim().replace("-", "");
+            if (noHyphens.length() == 32 && noHyphens.matches("[0-9a-fA-F]+")) {
+                return "id-" + noHyphens;
+            }
+        }
+        return "id-" + UUID.randomUUID().toString().replace("-", "");
+    }
 
     /**
      * Import the validated result into the given model (uses default folders per type).
@@ -73,10 +94,14 @@ public final class ArchiMateLLMImporter {
             }
             IArchimateElement element = (IArchimateElement) IArchimateFactory.eINSTANCE.create(eClass);
             element.setName(name);
-            element.setId(e.getId());
+            String elementId = ensureArchiMateId(e.getId());
+            element.setId(elementId);
             IFolder folder = targetFolder != null ? targetFolder : model.getDefaultFolderForObject(element);
             folder.getElements().add(element);
-            idToConcept.put(e.getId(), element);
+            idToConcept.put(elementId, element);
+            if (!elementId.equals(e.getId()) && e.getId() != null && !e.getId().isEmpty()) {
+                idToConcept.put(e.getId().trim(), element);
+            }
 
             if (targetDiagram != null && result.getDiagram() == null) {
                 IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
@@ -108,9 +133,11 @@ public final class ArchiMateLLMImporter {
             IArchimateElement target = (IArchimateElement) targetConcept;
             IArchimateRelationship rel = (IArchimateRelationship) IArchimateFactory.eINSTANCE.create(rClass);
             rel.setName(r.getName() != null ? r.getName() : "");
-            if (r.getId() != null && !r.getId().isEmpty()) {
-                rel.setId(r.getId());
-                idToRelationship.put(r.getId(), rel);
+            String relId = ensureArchiMateId(r.getId());
+            rel.setId(relId);
+            idToRelationship.put(relId, rel);
+            if (!relId.equals(r.getId()) && r.getId() != null && !r.getId().isEmpty()) {
+                idToRelationship.put(r.getId().trim(), rel);
             }
             rel.setSource(source);
             rel.setTarget(target);

@@ -32,23 +32,26 @@ public class ArchiMateSchemaValidatorTest {
         }
     }
 
+    private static final String E1 = "id-a1b2c3d4e5f67890abcdef1234567890";
+    private static final String E2 = "id-b2c3d4e5f67890abcdef1234567890ab";
+
     @Test
     public void validateGoodData_returnsNoErrors() {
         ArchiMateLLMResult result = new ArchiMateLLMResult();
         ArchiMateLLMResult.ElementSpec e1 = new ArchiMateLLMResult.ElementSpec();
         e1.setType("BusinessActor");
         e1.setName("Customer");
-        e1.setId("e1");
+        e1.setId(E1);
         result.getElements().add(e1);
         ArchiMateLLMResult.ElementSpec e2 = new ArchiMateLLMResult.ElementSpec();
         e2.setType("BusinessRole");
         e2.setName("Buyer");
-        e2.setId("e2");
+        e2.setId(E2);
         result.getElements().add(e2);
         ArchiMateLLMResult.RelationshipSpec r = new ArchiMateLLMResult.RelationshipSpec();
         r.setType("AssignmentRelationship");
-        r.setSource("e1");
-        r.setTarget("e2");
+        r.setSource(E1);
+        r.setTarget(E2);
         result.getRelationships().add(r);
 
         List<String> errors = ArchiMateSchemaValidator.validate(result);
@@ -75,7 +78,7 @@ public class ArchiMateSchemaValidatorTest {
         ArchiMateLLMResult.ElementSpec e = new ArchiMateLLMResult.ElementSpec();
         e.setType("NotAnArchiMateType");
         e.setName("A");
-        e.setId("e1");
+        e.setId(E1);
         result.getElements().add(e);
 
         List<String> errors = ArchiMateSchemaValidator.validate(result);

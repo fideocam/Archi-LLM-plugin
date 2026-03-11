@@ -36,6 +36,10 @@
   <profiles>
     <profile>
       <id>with-archi</id>
+      <properties>
+        <!-- Signal to archigpt-tests to add Archi model to classpath (path is resolved in archigpt-tests relative to its module). -->
+        <archi.on.classpath>true</archi.on.classpath>
+      </properties>
       <repositories>
         <repository>
           <id>archi-local</id>

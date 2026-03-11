@@ -51,6 +51,12 @@ You need a p2 repository that contains Archi’s `com.archimatetool.editor` bund
    mvn clean test -P with-archi
    ```
 
+   **Archi model on test classpath (run import/validator tests):** Tests such as `ArchiMateImportFlowTest`, `ArchiMateSchemaValidatorTest`, and `ModelContextToXmlTest` only run when the Archi model classes (e.g. `IArchimateFactory`) are on the classpath. When you use **-P with-archi**, the parent POM sets `archi.on.classpath=true`, which activates the **with-archi-model** profile in `archigpt-tests` and adds the Archi model JAR from your local Archi build to the test classpath. Default path (from `archigpt-tests` module) is `../../archi/com.archimatetool.model/target/com.archimatetool.model-5.8.0-SNAPSHOT.jar` (i.e. `archi` is a sibling of the plugin repo directory). If your layout differs, override the path:
+   ```bash
+   mvn test -pl archigpt-tests -P with-archi -Darchi.model.jar.path=/full/path/to/com.archimatetool.model-5.8.0-SNAPSHOT.jar
+   ```
+   If those tests are still skipped, the Archi model JAR may have runtime dependencies (e.g. EMF) that are not on the classpath; in that case they only run in an environment where the full Archi/OSGi classpath is available (e.g. Tycho test runtime or Eclipse).
+
    **Archi in a different path:** Pass the path to the Archi product p2 repository:
    ```bash
    mvn clean package -P with-archi -Darchi.repo.path=/path/to/archi/com.archimatetool.editor.product/target/repository

@@ -30,6 +30,31 @@
     </dependency>
   </dependencies>
 
+  <profiles>
+    <!-- Add Archi model JAR to test classpath when -P with-archi is used. Path: ../../archi (sibling of repo root) or override -Darchi.model.jar.path=/path/to/model.jar. Enables ArchiMateImportFlowTest, ArchiMateSchemaValidatorTest, ModelContextToXmlTest. -->
+    <profile>
+      <id>with-archi-model</id>
+      <activation>
+        <property>
+          <name>archi.on.classpath</name>
+        </property>
+      </activation>
+      <properties>
+        <archi.model.jar.path>${project.basedir}/../../archi/com.archimatetool.model/target/com.archimatetool.model-5.8.0-SNAPSHOT.jar</archi.model.jar.path>
+      </properties>
+      <dependencies>
+        <dependency>
+          <groupId>com.archimatetool</groupId>
+          <artifactId>com.archimatetool.model</artifactId>
+          <version>5.8.0-SNAPSHOT</version>
+          <scope>system</scope>
+          <systemPath>${archi.model.jar.path}</systemPath>
+          <optional>true</optional>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
+
   <build>
     <plugins>
       <plugin>
