@@ -7,7 +7,7 @@ ArchiGPT is a view that provides a text prompt box for interacting with your Arc
 
 **How to use**
 
-- Download the plugin file (ArchiGPT.archiplugin) from export folder 
+- Download the plugin file (ArchiGPT.archiplugin) from stable (or export) folder 
 - Install from **Help → Manage Archi Plug-ins**
 - After restart, open the view: in the menu bar click **ArchiGPT → Show ArchiGPT View**. You may also find it under **Help → Show ArchiGPT View** or **Tools → ArchiGPT**.
 
