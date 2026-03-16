@@ -11,7 +11,11 @@ import org.eclipse.ui.ISelectionService;
 
 import com.archimatetool.model.IArchimateConcept;
 import com.archimatetool.model.IArchimateDiagramModel;
+import com.archimatetool.model.IArchimateElement;
+import com.archimatetool.model.IArchimateRelationship;
 import com.archimatetool.model.IFolder;
+import com.archimatetool.model.IDiagramModelArchimateObject;
+import com.archimatetool.model.IDiagramModelConnection;
 
 /**
  * Builds context string from the current selection in Archi (model tree, etc.).
@@ -63,10 +67,32 @@ public final class SelectionContextBuilder {
         IStructuredSelection structured = (IStructuredSelection) selection;
         if (structured.isEmpty()) return false;
         Object first = structured.getFirstElement();
-        return first instanceof IArchimateConcept || first instanceof IFolder || first instanceof IArchimateDiagramModel;
+        return first instanceof IArchimateConcept || first instanceof IFolder || first instanceof IArchimateDiagramModel
+                || first instanceof IDiagramModelArchimateObject || first instanceof IDiagramModelConnection;
     }
 
     private static String describeSelectedObject(Object obj) {
+        // Selection on diagram canvas: figure (element on diagram) or connection (relationship on diagram)
+        if (obj instanceof IDiagramModelArchimateObject) {
+            IArchimateElement element = ((IDiagramModelArchimateObject) obj).getArchimateElement();
+            if (element != null) {
+                String type = element.eClass().getName();
+                String name = nullToEmpty(element.getName());
+                String id = element.getId() != null ? element.getId() : "";
+                return String.format("Element %s \"%s\" (id=%s)", type, name, id);
+            }
+        }
+        if (obj instanceof IDiagramModelConnection) {
+            IArchimateRelationship rel = getConnectionRelationship((IDiagramModelConnection) obj);
+            if (rel != null) {
+                String type = rel.eClass().getName();
+                String name = nullToEmpty(rel.getName());
+                String id = rel.getId() != null ? rel.getId() : "";
+                String src = rel.getSource() != null ? nullToEmpty(rel.getSource().getName()) : "?";
+                String tgt = rel.getTarget() != null ? nullToEmpty(rel.getTarget().getName()) : "?";
+                return String.format("Relationship %s \"%s\" (id=%s) from \"%s\" to \"%s\"", type, name, id, src, tgt);
+            }
+        }
         if (obj instanceof IArchimateConcept) {
             IArchimateConcept concept = (IArchimateConcept) obj;
             String type = concept.eClass().getName();
@@ -109,5 +135,24 @@ public final class SelectionContextBuilder {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    private static IArchimateRelationship getConnectionRelationship(IDiagramModelConnection conn) {
+        if (conn == null) return null;
+        try {
+            Method m = conn.getClass().getMethod("getArchimateRelationship");
+            Object rel = m.invoke(conn);
+            if (rel instanceof IArchimateRelationship) return (IArchimateRelationship) rel;
+        } catch (Exception e1) {
+            // continue
+        }
+        try {
+            Method m = conn.getClass().getMethod("getRelationship");
+            Object rel = m.invoke(conn);
+            if (rel instanceof IArchimateRelationship) return (IArchimateRelationship) rel;
+        } catch (Exception e2) {
+            // continue
+        }
+        return null;
     }
 }
