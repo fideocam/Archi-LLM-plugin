@@ -68,6 +68,9 @@ public final class ArchiMateLLMResultParser {
 
         parseStringArray(json, "\"removeElementIds\"", result.getRemoveElementIds());
         parseStringArray(json, "\"removeRelationshipIds\"", result.getRemoveRelationshipIds());
+        parseStringArray(json, "\"removeDiagramNames\"", result.getRemoveDiagramNames());
+        parseStringArray(json, "\"removeElementFromDiagramIds\"", result.getRemoveElementFromDiagramIds());
+        parseStringArray(json, "\"removeRelationshipFromDiagramIds\"", result.getRemoveRelationshipFromDiagramIds());
 
         return result;
     }

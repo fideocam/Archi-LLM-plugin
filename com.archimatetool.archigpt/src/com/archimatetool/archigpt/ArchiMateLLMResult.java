@@ -16,6 +16,11 @@ public final class ArchiMateLLMResult {
     private final List<RelationshipSpec> relationships = new ArrayList<>();
     private final List<String> removeElementIds = new ArrayList<>();
     private final List<String> removeRelationshipIds = new ArrayList<>();
+    private final List<String> removeDiagramNames = new ArrayList<>();
+    /** Element ids to remove only from the current diagram (figure removed; element stays in model). */
+    private final List<String> removeElementFromDiagramIds = new ArrayList<>();
+    /** Relationship ids to remove only from the current diagram (connection removed; relationship stays in model). */
+    private final List<String> removeRelationshipFromDiagramIds = new ArrayList<>();
     private DiagramSpec diagram;
     private String error;
 
@@ -33,6 +38,18 @@ public final class ArchiMateLLMResult {
 
     public List<String> getRemoveRelationshipIds() {
         return removeRelationshipIds;
+    }
+
+    public List<String> getRemoveDiagramNames() {
+        return removeDiagramNames;
+    }
+
+    public List<String> getRemoveElementFromDiagramIds() {
+        return removeElementFromDiagramIds;
+    }
+
+    public List<String> getRemoveRelationshipFromDiagramIds() {
+        return removeRelationshipFromDiagramIds;
     }
 
     public String getError() {

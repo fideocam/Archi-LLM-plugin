@@ -509,7 +509,10 @@ public class ArchiGPTView extends ViewPart {
                     ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(raw);
                     boolean hasDiagram = parsed.getDiagram() != null && parsed.getDiagram().getName() != null && !parsed.getDiagram().getName().isEmpty();
                     boolean hasImportData = !parsed.getElements().isEmpty() || !parsed.getRelationships().isEmpty()
-                            || !parsed.getRemoveElementIds().isEmpty() || !parsed.getRemoveRelationshipIds().isEmpty() || hasDiagram;
+                            || !parsed.getRemoveElementIds().isEmpty() || !parsed.getRemoveRelationshipIds().isEmpty()
+                            || !parsed.getRemoveDiagramNames().isEmpty()
+                            || !parsed.getRemoveElementFromDiagramIds().isEmpty() || !parsed.getRemoveRelationshipFromDiagramIds().isEmpty()
+                            || hasDiagram;
                     if (parsed.getError() != null && !parsed.getError().isEmpty()) {
                         toShow = "LLM reported: " + parsed.getError() + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                     } else if (!hasImportData) {
@@ -527,7 +530,10 @@ public class ArchiGPTView extends ViewPart {
                                 if (open.isEmpty()) {
                                     int addEl = resultToImport.getElements().size(), addRel = resultToImport.getRelationships().size();
                                     int remEl = resultToImport.getRemoveElementIds().size(), remRel = resultToImport.getRemoveRelationshipIds().size();
-                                    importMessage[0] = "No open model to import into.\n\nParsed: " + addEl + " elements, " + addRel + " relationships to add; " + remEl + " elements, " + remRel + " relationships to remove.";
+                                    int remDiag = resultToImport.getRemoveDiagramNames().size();
+                                    int remFromDiagEl = resultToImport.getRemoveElementFromDiagramIds().size();
+                                    int remFromDiagRel = resultToImport.getRemoveRelationshipFromDiagramIds().size();
+                                    importMessage[0] = "No open model to import into.\n\nParsed: " + addEl + " elements, " + addRel + " relationships to add; " + remEl + " elements, " + remRel + " relationships to remove from model; " + remFromDiagEl + " elements, " + remFromDiagRel + " relationships to remove from diagram only; " + remDiag + " diagrams to remove.";
                                 } else {
                                     IArchimateModel model = open.get(0);
                                     ArchiMateLLMImporter.importIntoModel(resultToImport, model, targetFolder, targetDiagram);
@@ -546,11 +552,16 @@ public class ArchiGPTView extends ViewPart {
                                     if (where.length() > 0) where.insert(0, " ");
                                     int addEl = resultToImport.getElements().size(), addRel = resultToImport.getRelationships().size();
                                     int remEl = resultToImport.getRemoveElementIds().size(), remRel = resultToImport.getRemoveRelationshipIds().size();
+                                    int remDiag = resultToImport.getRemoveDiagramNames().size();
+                                    int remFromDiagEl = resultToImport.getRemoveElementFromDiagramIds().size();
+                                    int remFromDiagRel = resultToImport.getRemoveRelationshipFromDiagramIds().size();
                                     String action = "Imported into model \"" + model.getName() + "\"" + where;
                                     if (addEl > 0 || addRel > 0) action += ": " + addEl + " elements, " + addRel + " relationships added.";
-                                    if (remEl > 0 || remRel > 0) action += (addEl > 0 || addRel > 0 ? " " : ": ") + "Removed " + remEl + " elements, " + remRel + " relationships.";
+                                    if (remEl > 0 || remRel > 0) action += (addEl > 0 || addRel > 0 ? " " : ": ") + "Removed " + remEl + " elements, " + remRel + " relationships from model.";
+                                    if (remFromDiagEl > 0 || remFromDiagRel > 0) action += (addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0 ? " " : ": ") + "Removed " + remFromDiagEl + " element(s), " + remFromDiagRel + " relationship(s) from diagram only.";
+                                    if (remDiag > 0) action += (addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 ? " " : ": ") + "Removed " + remDiag + " diagram(s).";
                                     boolean diagramCreated = resultToImport.getDiagram() != null && resultToImport.getDiagram().getName() != null && !resultToImport.getDiagram().getName().isEmpty();
-                                    importMessage[0] = (addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0 || diagramCreated) ? action : "No changes applied.";
+                                    importMessage[0] = (addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0 || remDiag > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 || diagramCreated) ? action : "No changes applied.";
                                 }
                             });
                             toShow = importMessage[0] + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
