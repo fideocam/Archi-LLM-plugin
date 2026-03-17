@@ -1,63 +1,79 @@
 # Archi-LLM-plugin
-Plugin to connect Archi ArchiMate modeling tool to user's chosen LLMs.
 
-## ArchiGPT plugin (`com.archimatetool.archigpt`)
+Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) with an LLM so you can extend and analyze your model using natural language. This repo provides the **ArchiGPT** plugin.
 
-ArchiGPT is a view that provides a text prompt box for interacting with your ArchiMate model via an LLM. 
+---
 
-**How to use**
-
-- Download the plugin file (ArchiGPT.archiplugin) from stable (or export) folder 
-- Install from **Help → Manage Archi Plug-ins**
-- After restart, open the view: in the menu bar click **ArchiGPT → Show ArchiGPT View**. You may also find it under **Help → Show ArchiGPT View** or **Tools → ArchiGPT**.
-
-**Current features:**
-- **Two tabs**: **ArchiGPT** tab shows only the prompt box, a single action button, and the LLM response. **Debug** tab shows build version, "What was sent to the LLM" summary, and the exact model XML sent to the LLM (for verifying payload and troubleshooting).
-- **Build version**: On the **Debug** tab you see **ArchiGPT v1.0.0.&lt;qualifier&gt;** (e.g. v1.0.0.20250304120000 after a build). Use this to confirm you are running the latest plugin.
-- **Main view**: Prompt text area; **Enter** submits (Shift+Enter for new line). The button shows **Ask ArchiGPT** when idle and **Stop ArchiGPT** when a request is running; click **Stop ArchiGPT** to cancel and disconnect from Ollama.
-- **Ollama integration**: Sends the prompt to local Ollama (`http://localhost:11434`). Default model: `llama3.2`. Ensure [Ollama](https://ollama.com) is running. Status messages show connection and progress; raw LLM response (truncated) is shown in the result.
-- **Model as context**: The open ArchiMate model is serialized to XML (elements, relationships, views and diagrams) and sent to the LLM with every request so it can avoid duplicates and describe the actual content. **Relevant parts first**: If you select a folder, view, or element in Archi, that context is sent *first* in the XML (selected folder's contents, selected view's diagram, or the view(s) that contain the selected element), so the LLM always sees what you're working on within the 24k limit. To fit **Ollama’s context limit** (often 4k–8k tokens with default settings), at most **12,000 characters** of model XML are sent (so the full message fits typical 4k–8k token limits); if the model is larger, the rest is truncated after the priority content. The **model XML is sent first** in the user message (then "--- END OF MODEL ---", then your request and selection) so the LLM receives the ArchiMate model; the system prompt tells the model to use the XML between the start and that delimiter. The plugin requests a 32k-token context from Ollama when available (increase in **Ollama → Settings** or via `OLLAMA_NUM_CTX` if the model still doesn’t “see” the XML).
-- **Debug tab**: When you click **Ask ArchiGPT**, the **Debug** tab is updated with: **(1) What was sent to the LLM (last request)** — prompt, selection context, and model XML length (with a short preview); **(2) Model XML sent to LLM (exact payload)** — the XML actually sent. Switch to the Debug tab to inspect these.
-- **Analysis mode**: For analysis/description/review prompts, the LLM replies in plain text. The system prompt instructs it to use [Open Group ArchiMate XSDs](https://www.opengroup.org/xsd/archimate/) as reference, to minimize hallucinations (only refer to elements in the supplied model), and to include views and diagrams when describing the full model.
-- **Return/export model**: If you ask to "return the model", "return an empty model", or "export the model as XML", the LLM responds with a full **Open Exchange XML** document (XML declaration, `<model>` root with schema references, `<archimateModel>`, folders, and `<viewsAndDiagrams>`), not the JSON format. When the response contains full model XML, a **Save as…** button appears below the response box; use it to save the XML as a `.archimate` or `.xml` file.
-- **CHANGES mode**: For add/change prompts (e.g. "add an element"), the LLM returns **JSON** (elements and relationships) for the importer. The importer validates against ArchiMate 3.2 and skips elements that already exist in the model (same type and name). New elements are added to the selected folder (or the folder of the selected element). If a diagram is open or a view is selected, new elements are also added as figures on that view. **Remove from model/diagram**: You can remove or delete elements and relationships from the model (and thus from all diagrams). Select the element or relationship in the model tree or by clicking it on a diagram, then ask e.g. "remove this element", "delete this relationship", or "remove the Customer actor". The LLM returns "removeElementIds"/"removeRelationshipIds"; the plugin removes those from the model and from every diagram. **Remove from diagram only** (element stays in model): To remove only the figure from the current view, select the element (or relationship) on the diagram and ask e.g. "remove from the diagram", "remove from this view", or "take it off the diagram". The LLM returns "removeElementFromDiagramIds"/"removeRelationshipFromDiagramIds"; the plugin removes only that figure/connection from the open or selected diagram. **Remove a diagram (view)**: Select the diagram in the tree or ask by name (e.g. "remove the Idea diagram", "delete this view"). The LLM returns "removeDiagramNames"; the plugin removes those views from the model (the diagram and its figures are deleted; elements and relationships in the model stay). **New diagram**: If the user asks for a whole new diagram/view (e.g. "create a new diagram", "add a view"), the LLM can include an optional `"diagram"` object in the same JSON with `name`, `viewpoint`, `nodes` (elementId, x, y, width, height), and `connections` (sourceElementId, targetElementId, relationshipId). The plugin then creates a new view in the model with those elements and connections laid out.
-- **Background job**: Requests run in a background job so the UI stays responsive.
-
-**Building from source:** See [build.md](build.md) for Maven, Eclipse, and Ant build instructions.
-
-## Installing and using the plugin
+## Installing the plugin
 
 1. **Get the plugin**  
-   Use the pre-built `export/ArchiGPT.archiplugin` from this repo, or [build from source](build.md) to produce the JAR or `.archiplugin` file.
+   Download `ArchiGPT.archiplugin` from the **export** folder in this repo (or from releases, if available).
 
 2. **Close Archi**  
    Quit Archi completely before installing.
 
-3. **Install**  
-   In Archi: **Help → Manage Archi Plug-ins** → **Install new** → select `ArchiGPT.archiplugin` (or copy the built JAR into Archi’s dropins folder — see [build.md](build.md) for output paths and dropins locations per OS). Restart Archi.
+3. **Install in Archi**  
+   - Open Archi.  
+   - Go to **Help → Manage Archi Plug-ins**.  
+   - Click **Install new** and select the `ArchiGPT.archiplugin` file.  
+   - Restart Archi when prompted.
 
 4. **Open the ArchiGPT view**  
-   **Help → Show ArchiGPT View** (or **ArchiGPT → Show ArchiGPT View** / **Tools → ArchiGPT**). The view has two tabs: **ArchiGPT** (prompt, Ask/Stop button, response, Save as…) and **Debug** (build version and request payload). Open an ArchiMate model to use the plugin.
+   After restart: **ArchiGPT → Show ArchiGPT View** (or **Help → Show ArchiGPT View** / **Tools → ArchiGPT**).
 
-### Uninstalling the plugin
+---
 
-1. **Close the ArchiGPT view first**  
-   Close the ArchiGPT tab (e.g. right‑click the tab → **Close**) before uninstalling. If you leave the view open, Archi will remember it in the layout; after the plugin is removed, that tab can reappear as an error placeholder (stop sign).
+## Prerequisites
 
-2. **Uninstall**  
-   **Help → Manage Archi Plug-ins** → select ArchiGPT → **Uninstall** (or remove the JAR from the dropins folder), then restart Archi.
+- **Archi** — [Download Archi](https://www.archimatetool.com/download/) if you don’t have it.
+- **Ollama** — The plugin talks to [Ollama](https://ollama.com) on your machine. Install Ollama and start it (e.g. run `ollama serve` or use the Ollama app). The plugin uses `http://localhost:11434` and the default model `llama3.2` unless you change settings.
 
-3. **If you already see the error tab**  
-   After uninstalling, if a tab labeled ArchiGPT shows an error (stop sign): right‑click the tab → **Close**. If the layout keeps trying to restore it, use **Window → Reset Perspective** (or the equivalent in your Archi version) to clear the saved layout.
+---
 
+## Using ArchiGPT
 
-## Background
+- **Open a model** — Have an ArchiMate model open in Archi. The plugin sends a summary of the model to the LLM so it can answer in context.
+- **Type your request** — In the ArchiGPT tab, type what you want in the prompt box. Examples:
+  - *"Add a Business Actor called Customer"*
+  - *"Describe this view"*
+  - *"What business processes use this application?"*
+  - *"Remove this element from the diagram"*
+- **Send** — Press **Enter** (or click **Ask ArchiGPT**). Use **Shift+Enter** for a new line. Click **Stop ArchiGPT** to cancel a request.
+- **Result** — The LLM reply appears in the response area. If you asked to add or change the model, the plugin applies the changes and reports what was added or removed.
 
-This plugin connects [Archi](https://www.archimatetool.com/) (ArchiMate modeling) with an LLM so you can extend and analyze models via natural language. It uses the Open Group ArchiMate 3.2 specification and Archi’s model API; references: [Developing Import and Export Plug-ins](https://github.com/archimatetool/archi/wiki/Developing-Import-and-Export-Plug-ins).
+**Selection matters:** If you select a folder, a diagram, or an element in Archi before asking, the plugin sends that context to the LLM (e.g. “add to this diagram”, “remove this element”).
 
-## Planned features
+**Debug tab:** The **Debug** tab shows the plugin version and what was sent to the LLM (payload summary and XML), useful for troubleshooting.
 
-- API support for external LLMs
-- Shared prompt libraries
-- Multi‑turn conversations with context
-- Pattern suggestions and architecture validations
+---
+
+## What you can do
+
+- **Ask for analysis** — Describe the model, a view, or an element; ask about capabilities, dependencies, or impact. You get a plain-text answer.
+- **Add elements and relationships** — Ask to add actors, processes, services, etc. The LLM returns structured data and the plugin adds them to your model (and optionally to the current diagram).
+- **Create a new diagram** — Ask for a new view/diagram; the plugin can create it with elements and layout.
+- **Remove from the model** — Ask to remove or delete an element or relationship (select it first, or name it). The plugin removes it from the model and all diagrams.
+- **Remove from the diagram only** — Ask to “remove from the diagram” or “remove from this view” so only the figure is removed from the current view; the element stays in the model.
+- **Remove a diagram** — Ask to remove/delete a view by name or by selecting it.
+- **Export model as XML** — Ask to “return the model” or “export the model as XML”; when the reply contains full model XML, a **Save as…** button appears to save it to a file.
+
+---
+
+## Uninstalling the plugin
+
+1. Close the ArchiGPT view (right‑click its tab → **Close**).
+2. **Help → Manage Archi Plug-ins** → select ArchiGPT → **Uninstall**, then restart Archi.
+3. If a broken ArchiGPT tab appears after uninstall, right‑click it → **Close**. If the layout keeps restoring it, use **Window → Reset Perspective** (or your Archi equivalent).
+
+---
+
+## Building from source
+
+If you want to build the plugin yourself (Maven, Eclipse, or Ant), see **[docs/build.md](docs/build.md)**.
+
+---
+
+## More information
+
+- [Open Group ArchiMate](https://www.opengroup.org/archimate-forum) and [Archi](https://www.archimatetool.com/) for modeling.
+- [Developing Import and Export Plug-ins](https://github.com/archimatetool/archi/wiki/Developing-Import-and-Export-Plug-ins) for Archi plugin development.

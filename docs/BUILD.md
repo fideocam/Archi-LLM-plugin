@@ -1,6 +1,6 @@
 # Building the ArchiGPT plugin
 
-This document describes how to build the ArchiGPT plugin from source. For using and installing the plugin, see [README.md](README.md).
+This document describes how to build the ArchiGPT plugin from source. For installing and using the plugin, see the [README](../README.md).
 
 ## Build output
 
@@ -8,7 +8,7 @@ This document describes how to build the ArchiGPT plugin from source. For using 
 - **Ant:** `build-output/`
 - **Installable package:** `export/ArchiGPT.archiplugin` (for **Help → Manage Archi Plug-ins**)
 
-After building, see README for [installing and using](README.md#installing-and-using-the-plugin) the plugin in Archi.
+After building, see the [README](../README.md#installing-the-plugin) for how to install and use the plugin in Archi.
 
 ---
 
@@ -107,7 +107,7 @@ Maven/Tycho requires a p2 repository, not a plain `plugins` folder. You can:
 3. Set it as the target platform.
 4. **File → Export → Deployable plug-ins and fragments** and export the ArchiGPT plugin.
 
-Copy the resulting JAR into Archi’s `dropins` folder (see README for paths per OS).
+Copy the resulting JAR into Archi’s `dropins` folder (see [README](../README.md#installing-the-plugin) for paths per OS).
 
 ---
 
