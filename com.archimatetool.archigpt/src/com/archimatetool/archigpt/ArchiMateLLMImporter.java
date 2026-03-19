@@ -96,8 +96,14 @@ public final class ArchiMateLLMImporter {
             element.setName(name);
             String elementId = ensureArchiMateId(e.getId());
             element.setId(elementId);
-            IFolder folder = targetFolder != null ? targetFolder : model.getDefaultFolderForObject(element);
-            folder.getElements().add(element);
+            IFolder defaultFolder = model.getDefaultFolderForObject(element);
+            IFolder folder = defaultFolder;
+            if (targetFolder != null && defaultFolder != null && targetFolder.getType() == defaultFolder.getType()) {
+                folder = targetFolder;
+            }
+            if (folder != null) {
+                folder.getElements().add(element);
+            }
             idToConcept.put(elementId, element);
             if (!elementId.equals(e.getId()) && e.getId() != null && !e.getId().isEmpty()) {
                 idToConcept.put(e.getId().trim(), element);
