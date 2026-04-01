@@ -73,6 +73,18 @@ If you want to build the plugin yourself (Maven, Eclipse, or Ant), see **[docs/b
 
 ---
 
+## License
+
+**MIT License** — same terms family as **[Archi](https://github.com/archimatetool/archi)** (Archi is MIT-licensed). Full text: [LICENSE](LICENSE).
+
+You may use, modify, and redistribute this plug-in; **keep the copyright and permission notice** in copies. This repository is **separate** from Archi; Archi itself remains under its authors’ license.
+
+**Attribution:** Please credit **Archi-LLM-plugin / ArchiGPT** and link to this repo when you publish a fork or derivative.
+
+**Note:** MIT permits commercial redistribution under law. The license is chosen to stay **compatible with Archi’s ecosystem**, not to impose restrictions that conflict with how Archi and typical Eclipse plug-ins are shared.
+
+---
+
 ## More information
 
 - [Open Group ArchiMate](https://www.opengroup.org/archimate-forum) and [Archi](https://www.archimatetool.com/) for modeling.
