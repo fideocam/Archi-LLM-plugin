@@ -69,11 +69,18 @@ public final class ModelContextToXml {
         sb.append("  <archimateModel name=\"").append(escape(model.getName())).append("\">\n");
 
         List<IFolder> orderedFolders = orderFolders(model.getFolders(), priorityFolders);
-        boolean truncated = appendFoldersWithLimit(sb, orderedFolders, 2, maxChars > 0 ? effectiveMax : 0);
-        if (!truncated) {
-            List<IArchimateDiagramModel> allDiagrams = collectAllDiagramModels(model);
-            List<IArchimateDiagramModel> orderedDiagrams = orderDiagrams(allDiagrams, priorityDiagrams);
-            appendViewsAndDiagramsWithLimit(sb, orderedDiagrams, 2, maxChars > 0 ? effectiveMax : 0);
+        List<IArchimateDiagramModel> allDiagrams = collectAllDiagramModels(model);
+        List<IArchimateDiagramModel> orderedDiagrams = orderDiagrams(allDiagrams, priorityDiagrams);
+        int cap = maxChars > 0 ? effectiveMax : 0;
+        if (maxChars > 0) {
+            // Capped LLM context: views before folders so diagram content is not omitted when folder XML fills the limit.
+            appendViewsAndDiagramsWithLimit(sb, orderedDiagrams, 2, cap);
+            appendFoldersWithLimit(sb, orderedFolders, 2, cap);
+        } else {
+            boolean truncated = appendFoldersWithLimit(sb, orderedFolders, 2, 0);
+            if (!truncated) {
+                appendViewsAndDiagramsWithLimit(sb, orderedDiagrams, 2, 0);
+            }
         }
         sb.append("  </archimateModel>\n");
         sb.append("</model>");
@@ -135,7 +142,7 @@ public final class ModelContextToXml {
         for (IFolder folder : folders) {
             appendOneFolder(sb, folder, indent);
             if (maxChars > 0 && sb.length() >= maxChars) {
-                sb.append("\n  ... (truncated for context limit; selected context was sent first)\n");
+                sb.append("\n  ... (truncated for context limit)\n");
                 return true;
             }
         }
@@ -197,6 +204,11 @@ public final class ModelContextToXml {
             }
         }
         return out;
+    }
+
+    /** All diagram/view models in the given ArchiMate model (for prioritization or name matching). */
+    public static List<IArchimateDiagramModel> getAllDiagramModels(IArchimateModel model) {
+        return collectAllDiagramModels(model);
     }
 
     /** Collect all ArchiMate diagram models from the model (getDiagramModels + any found via eAllContents). */

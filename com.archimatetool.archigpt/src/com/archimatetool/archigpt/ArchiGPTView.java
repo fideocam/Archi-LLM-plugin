@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -47,7 +48,10 @@ import com.archimatetool.editor.model.IEditorModelManager;
 import com.archimatetool.model.IArchimateConcept;
 import com.archimatetool.model.IArchimateDiagramModel;
 import com.archimatetool.model.IArchimateModel;
+import com.archimatetool.model.IArchimateModelObject;
 import com.archimatetool.model.IDiagramModel;
+import com.archimatetool.model.IDiagramModelArchimateObject;
+import com.archimatetool.model.IDiagramModelConnection;
 import com.archimatetool.model.IFolder;
 
 import org.eclipse.ui.IEditorPart;
@@ -246,28 +250,34 @@ public class ArchiGPTView extends ViewPart {
         }
     }
 
-    /** Collect folders to put first in the XML (selected folder or the folder containing the selected element). */
-    private static List<IFolder> getPriorityFoldersFromSelection(IStructuredSelection selection) {
-        if (selection == null || selection.isEmpty()) return new ArrayList<>();
+    /** Collect folders to put first in the XML (selected folder or the folder containing the selected element); only for {@code model}. */
+    private static List<IFolder> getPriorityFoldersFromSelection(IStructuredSelection selection, IArchimateModel model) {
+        if (selection == null || selection.isEmpty() || model == null) return new ArrayList<>();
         Set<IFolder> seen = new LinkedHashSet<>();
         List<IFolder> list = new ArrayList<>();
         for (Iterator<?> it = selection.iterator(); it.hasNext(); ) {
             Object obj = it.next();
             if (obj instanceof IFolder) {
                 IFolder f = (IFolder) obj;
-                if (!seen.contains(f)) { seen.add(f); list.add(f); }
+                if (model.equals(f.getArchimateModel()) && !seen.contains(f)) {
+                    seen.add(f);
+                    list.add(f);
+                }
             } else if (obj instanceof IArchimateConcept) {
                 Object container = ((IArchimateConcept) obj).eContainer();
                 if (container instanceof IFolder) {
                     IFolder f = (IFolder) container;
-                    if (!seen.contains(f)) { seen.add(f); list.add(f); }
+                    if (model.equals(f.getArchimateModel()) && !seen.contains(f)) {
+                        seen.add(f);
+                        list.add(f);
+                    }
                 }
             }
         }
         return list;
     }
 
-    /** Collect diagrams to put first in the XML (selected view or views that contain the selected element). */
+    /** Collect diagrams to put first in the XML (selected view, diagram canvas selection, or views that contain the selected element). */
     private static List<IArchimateDiagramModel> getPriorityDiagramsFromSelection(IStructuredSelection selection, IArchimateModel model) {
         if (selection == null || selection.isEmpty() || model == null) return new ArrayList<>();
         Set<IArchimateDiagramModel> seen = new LinkedHashSet<>();
@@ -279,6 +289,24 @@ public class ArchiGPTView extends ViewPart {
                 if (model.equals(dm.getArchimateModel()) && !seen.contains(dm)) {
                     seen.add(dm);
                     list.add(dm);
+                }
+            } else if (obj instanceof IDiagramModelArchimateObject) {
+                IDiagramModel dm = ((IDiagramModelArchimateObject) obj).getDiagramModel();
+                if (dm instanceof IArchimateDiagramModel) {
+                    IArchimateDiagramModel adm = (IArchimateDiagramModel) dm;
+                    if (model.equals(adm.getArchimateModel()) && !seen.contains(adm)) {
+                        seen.add(adm);
+                        list.add(adm);
+                    }
+                }
+            } else if (obj instanceof IDiagramModelConnection) {
+                IDiagramModel dm = ((IDiagramModelConnection) obj).getDiagramModel();
+                if (dm instanceof IArchimateDiagramModel) {
+                    IArchimateDiagramModel adm = (IArchimateDiagramModel) dm;
+                    if (model.equals(adm.getArchimateModel()) && !seen.contains(adm)) {
+                        seen.add(adm);
+                        list.add(adm);
+                    }
                 }
             } else if (obj instanceof IArchimateConcept) {
                 for (IArchimateDiagramModel dm : ModelContextToXml.getDiagramsContaining(model, (IArchimateConcept) obj)) {
@@ -292,10 +320,16 @@ public class ArchiGPTView extends ViewPart {
     private static IFolder resolveTargetFolder(IStructuredSelection selection, IArchimateModel model) {
         if (selection == null || selection.isEmpty() || model == null) return null;
         Object first = selection.getFirstElement();
-        if (first instanceof IFolder) return (IFolder) first;
+        if (first instanceof IFolder) {
+            IFolder f = (IFolder) first;
+            return model.equals(f.getArchimateModel()) ? f : null;
+        }
         if (first instanceof IArchimateConcept) {
             Object container = ((IArchimateConcept) first).eContainer();
-            if (container instanceof IFolder) return (IFolder) container;
+            if (container instanceof IFolder) {
+                IFolder f = (IFolder) container;
+                return model.equals(f.getArchimateModel()) ? f : null;
+            }
         }
         return null;
     }
@@ -306,6 +340,20 @@ public class ArchiGPTView extends ViewPart {
             Object first = selection.getFirstElement();
             if (first instanceof IArchimateDiagramModel && model.equals(((IArchimateDiagramModel) first).getArchimateModel())) {
                 return (IArchimateDiagramModel) first;
+            }
+            if (first instanceof IDiagramModelArchimateObject) {
+                IDiagramModel dm = ((IDiagramModelArchimateObject) first).getDiagramModel();
+                if (dm instanceof IArchimateDiagramModel) {
+                    IArchimateDiagramModel adm = (IArchimateDiagramModel) dm;
+                    if (model.equals(adm.getArchimateModel())) return adm;
+                }
+            }
+            if (first instanceof IDiagramModelConnection) {
+                IDiagramModel dm = ((IDiagramModelConnection) first).getDiagramModel();
+                if (dm instanceof IArchimateDiagramModel) {
+                    IArchimateDiagramModel adm = (IArchimateDiagramModel) dm;
+                    if (model.equals(adm.getArchimateModel())) return adm;
+                }
             }
         }
         try {
@@ -322,6 +370,106 @@ public class ArchiGPTView extends ViewPart {
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    /**
+     * Prefer the model for the active Archi editor; otherwise infer from selection (tree or diagram canvas);
+     * then cached model-tree selection; finally the first open model. Avoids sending the wrong model when several are open.
+     */
+    private static IArchimateModel resolveActiveModel(IWorkbenchWindow window, IStructuredSelection workbenchSelection,
+            IStructuredSelection cachedModelSelection, List<IArchimateModel> openModels) {
+        if (openModels == null || openModels.isEmpty()) return null;
+        try {
+            if (window != null && window.getActivePage() != null) {
+                IEditorPart editor = window.getActivePage().getActiveEditor();
+                if (editor != null) {
+                    IArchimateModel fromEditor = editor.getAdapter(IArchimateModel.class);
+                    if (fromEditor != null && isInOpenList(fromEditor, openModels)) {
+                        return fromEditor;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        IArchimateModel fromSelection = getModelFromStructuredSelection(workbenchSelection);
+        if (fromSelection != null && isInOpenList(fromSelection, openModels)) {
+            return fromSelection;
+        }
+        fromSelection = getModelFromStructuredSelection(cachedModelSelection);
+        if (fromSelection != null && isInOpenList(fromSelection, openModels)) {
+            return fromSelection;
+        }
+        return openModels.get(0);
+    }
+
+    private static boolean isInOpenList(IArchimateModel model, List<IArchimateModel> openModels) {
+        if (model == null) return false;
+        for (IArchimateModel m : openModels) {
+            if (m == model) return true;
+        }
+        return false;
+    }
+
+    private static IArchimateModel getModelFromStructuredSelection(IStructuredSelection selection) {
+        if (selection == null || selection.isEmpty()) return null;
+        for (Iterator<?> it = selection.iterator(); it.hasNext(); ) {
+            Object obj = it.next();
+            if (obj instanceof IArchimateModelObject) {
+                IArchimateModel m = ((IArchimateModelObject) obj).getArchimateModel();
+                if (m != null) return m;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Views whose names appear in the prompt (case-insensitive), longest names first to reduce false matches.
+     */
+    private static List<IArchimateDiagramModel> diagramsMentionedInPrompt(IArchimateModel model, String prompt) {
+        if (model == null || prompt == null) return new ArrayList<>();
+        String pl = prompt.trim().toLowerCase(Locale.ROOT);
+        if (pl.isEmpty()) return new ArrayList<>();
+        List<IArchimateDiagramModel> all = new ArrayList<>(ModelContextToXml.getAllDiagramModels(model));
+        all.sort((a, b) -> Integer.compare(diagramNameLen(b), diagramNameLen(a)));
+        Set<IArchimateDiagramModel> seen = new LinkedHashSet<>();
+        List<IArchimateDiagramModel> out = new ArrayList<>();
+        for (IArchimateDiagramModel dm : all) {
+            String n = dm.getName();
+            if (n == null) continue;
+            String nl = n.trim().toLowerCase(Locale.ROOT);
+            if (nl.length() < 4) continue;
+            if (pl.contains(nl) && seen.add(dm)) {
+                out.add(dm);
+            }
+        }
+        return out;
+    }
+
+    private static int diagramNameLen(IArchimateDiagramModel d) {
+        return d != null && d.getName() != null ? d.getName().length() : 0;
+    }
+
+    private static List<IArchimateDiagramModel> mergeDiagramPriorities(IArchimateModel model, String prompt,
+            List<IArchimateDiagramModel> fromSelection) {
+        List<IArchimateDiagramModel> fromPrompt = diagramsMentionedInPrompt(model, prompt);
+        if (fromPrompt.isEmpty()) {
+            return fromSelection != null ? fromSelection : new ArrayList<>();
+        }
+        Set<IArchimateDiagramModel> seen = new LinkedHashSet<>();
+        List<IArchimateDiagramModel> merged = new ArrayList<>();
+        for (IArchimateDiagramModel d : fromPrompt) {
+            if (d != null && model.equals(d.getArchimateModel()) && seen.add(d)) {
+                merged.add(d);
+            }
+        }
+        if (fromSelection != null) {
+            for (IArchimateDiagramModel d : fromSelection) {
+                if (d != null && seen.add(d)) {
+                    merged.add(d);
+                }
+            }
+        }
+        return merged;
     }
 
     private void onStopRequest() {
@@ -414,12 +562,14 @@ public class ArchiGPTView extends ViewPart {
         }
         String selectionContext = selectionToUse != null ? SelectionContextBuilder.buildFromStructuredSelection(selectionToUse) : "";
 
+        IWorkbenchWindow windowEarly = getViewSite() != null ? getViewSite().getWorkbenchWindow() : null;
         List<IArchimateModel> openModels = IEditorModelManager.INSTANCE.getModels();
-        IArchimateModel model = openModels.isEmpty() ? null : openModels.get(0);
+        IArchimateModel model = resolveActiveModel(windowEarly, selectionToUse, lastModelSelection, openModels);
 
         // Build XML for LLM with relevant parts first; cap size so it fits Ollama context
-        List<IFolder> priorityFolders = getPriorityFoldersFromSelection(selectionToUse);
-        List<IArchimateDiagramModel> priorityDiagrams = getPriorityDiagramsFromSelection(selectionToUse, model);
+        List<IFolder> priorityFolders = getPriorityFoldersFromSelection(selectionToUse, model);
+        List<IArchimateDiagramModel> priorityDiagrams = mergeDiagramPriorities(model, prompt,
+                getPriorityDiagramsFromSelection(selectionToUse, model));
         String modelXmlForRequest = model != null
                 ? ModelContextToXml.toXml(model, LLM_MAX_XML_CHARS, priorityFolders, priorityDiagrams)
                 : "";
@@ -428,7 +578,10 @@ public class ArchiGPTView extends ViewPart {
         // Show exactly what we send in the GUI so the user can verify the model is included
         int xmlLen = modelXmlForRequest != null ? modelXmlForRequest.length() : 0;
         StringBuilder summary = new StringBuilder();
-        summary.append("Payload order: model XML first, then your request (so the LLM receives the model).\n\n");
+        summary.append("Payload order: model XML first (views before folders within the cap), then your request.\n\n");
+        if (model != null) {
+            summary.append("Active model sent to Ollama: \"").append(model.getName() != null ? model.getName() : "").append("\"\n\n");
+        }
         summary.append("Prompt: ").append(prompt).append("\n\n");
         summary.append("Selection context: ").append(selectionContext != null && !selectionContext.isEmpty() ? selectionContext.trim() : "(none)").append("\n\n");
         summary.append("Model XML: ").append(xmlLen).append(" characters sent (see box below). ");
@@ -447,9 +600,10 @@ public class ArchiGPTView extends ViewPart {
         if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
             xmlPreviewText.setText(modelXmlForRequest != null ? modelXmlForRequest : "");
         }
-        IWorkbenchWindow window = getViewSite() != null ? getViewSite().getWorkbenchWindow() : null;
+        IWorkbenchWindow window = windowEarly != null ? windowEarly : (getViewSite() != null ? getViewSite().getWorkbenchWindow() : null);
         final IFolder targetFolder = resolveTargetFolder(selectionToUse, model);
         final IArchimateDiagramModel targetDiagram = resolveTargetDiagram(selectionToUse, model, window);
+        final IArchimateModel modelForImport = model;
 
         final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXmlForRequest, prompt);
 
@@ -534,8 +688,10 @@ public class ArchiGPTView extends ViewPart {
                                     int remFromDiagEl = resultToImport.getRemoveElementFromDiagramIds().size();
                                     int remFromDiagRel = resultToImport.getRemoveRelationshipFromDiagramIds().size();
                                     importMessage[0] = "No open model to import into.\n\nParsed: " + addEl + " elements, " + addRel + " relationships to add; " + remEl + " elements, " + remRel + " relationships to remove from model; " + remFromDiagEl + " elements, " + remFromDiagRel + " relationships to remove from diagram only; " + remDiag + " diagrams to remove.";
+                                } else if (modelForImport == null || !isInOpenList(modelForImport, open)) {
+                                    importMessage[0] = "The ArchiMate model used for this request is no longer open; import skipped. Open the model and run the request again.";
                                 } else {
-                                    IArchimateModel model = open.get(0);
+                                    IArchimateModel model = modelForImport;
                                     ArchiMateLLMImporter.importIntoModel(resultToImport, model, targetFolder, targetDiagram);
                                     StringBuilder where = new StringBuilder();
                                     if (targetFolder != null) {
