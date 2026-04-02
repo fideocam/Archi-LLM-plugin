@@ -5,14 +5,14 @@
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 JAR="$ROOT/com.archimatetool.archigpt/target/com.archimatetool.archigpt-1.0.0-SNAPSHOT.jar"
-OUT="$ROOT/export/ArchiGPT.archiplugin"
+OUT="$ROOT/export build/ArchiGPT.archiplugin"
 
 if [ ! -f "$JAR" ]; then
   echo "Plugin JAR not found. Build it first: mvn package -pl com.archimatetool.archigpt -P with-archi -Darchi.repo.path=..."
   exit 1
 fi
 
-mkdir -p "$ROOT/export"
+mkdir -p "$ROOT/export build"
 # .archiplugin = zip with magic entry "archi-plugin" + plugin JAR (see Archi DropinsPluginHandler)
 python3 - "$OUT" "$JAR" << 'PY'
 import zipfile, os, sys

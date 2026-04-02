@@ -33,7 +33,7 @@
               <target>
                 <exec executable="python3" failonerror="true">
                   <arg value="-c"/>
-                  <arg value="import zipfile, os; j=r'${project.build.directory}/${project.artifactId}-${project.version}.jar'; o=r'${project.basedir}/../export/ArchiGPT.archiplugin'; os.makedirs(os.path.dirname(o), exist_ok=True); z=zipfile.ZipFile(o,'w',zipfile.ZIP_DEFLATED); z.writestr('archi-plugin',''); z.write(j, os.path.basename(j)); z.close(); print('Created', o)"/>
+                  <arg value="import zipfile, os; j=r'${project.build.directory}/${project.artifactId}-${project.version}.jar'; o=r'${project.basedir}/../export build/ArchiGPT.archiplugin'; os.makedirs(os.path.dirname(o), exist_ok=True); z=zipfile.ZipFile(o,'w',zipfile.ZIP_DEFLATED); z.writestr('archi-plugin',''); z.write(j, os.path.basename(j)); z.close(); print('Created', o)"/>
                 </exec>
               </target>
             </configuration>
