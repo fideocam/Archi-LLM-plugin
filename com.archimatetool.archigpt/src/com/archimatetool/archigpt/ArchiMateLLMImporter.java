@@ -12,7 +12,16 @@ import java.util.regex.Pattern;
 
 import org.eclipse.emf.ecore.EClass;
 import org.eclipse.emf.ecore.EObject;
+import org.eclipse.gef.commands.Command;
+import org.eclipse.gef.commands.CommandStack;
 
+import com.archimatetool.editor.diagram.commands.AddDiagramObjectCommand;
+import com.archimatetool.editor.diagram.commands.DiagramCommandFactory;
+import com.archimatetool.editor.model.commands.AddListMemberCommand;
+import com.archimatetool.editor.model.commands.DeleteArchimateElementCommand;
+import com.archimatetool.editor.model.commands.DeleteArchimateRelationshipCommand;
+import com.archimatetool.editor.model.commands.DeleteDiagramModelCommand;
+import com.archimatetool.editor.model.commands.NonNotifyingCompoundCommand;
 import com.archimatetool.model.IArchimateDiagramModel;
 import com.archimatetool.model.IArchimateConcept;
 import com.archimatetool.model.IArchimateElement;
@@ -23,11 +32,14 @@ import com.archimatetool.model.IArchimateRelationship;
 import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IDiagramModelConnection;
+import com.archimatetool.model.IDiagramModelContainer;
 import com.archimatetool.model.IFolder;
 import com.archimatetool.model.FolderType;
 
 /**
  * Adds elements and relationships from a validated ArchiMateLLMResult to an existing IArchimateModel.
+ * When the model exposes a GEF {@link CommandStack} (normal in Archi), all changes are executed as one
+ * compound command so Undo/Redo stays consistent.
  */
 @SuppressWarnings("nls")
 public final class ArchiMateLLMImporter {
@@ -74,6 +86,295 @@ public final class ArchiMateLLMImporter {
      * also added as figures to that diagram (e.g. the open or selected view).
      */
     public static void importIntoModel(ArchiMateLLMResult result, IArchimateModel model, IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
+        CommandStack stack = getCommandStack(model);
+        if (stack != null) {
+            NonNotifyingCompoundCommand compound = new NonNotifyingCompoundCommand("ArchiGPT: apply LLM changes");
+            buildImportCommands(compound, result, model, targetFolder, targetDiagram);
+            if (!compound.getCommands().isEmpty()) {
+                stack.execute(compound);
+            }
+        } else {
+            runImportWithoutCommandStack(result, model, targetFolder, targetDiagram);
+        }
+    }
+
+    private static CommandStack getCommandStack(IArchimateModel model) {
+        if (model == null) {
+            return null;
+        }
+        try {
+            Object adapter = model.getAdapter(CommandStack.class);
+            return adapter instanceof CommandStack ? (CommandStack) adapter : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void buildImportCommands(NonNotifyingCompoundCommand compound, ArchiMateLLMResult result,
+            IArchimateModel model, IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
+        Map<String, IArchimateConcept> idToConcept = new HashMap<>();
+        Map<String, IArchimateRelationship> idToRelationship = new HashMap<>();
+
+        int diagramY = 50;
+        final int elementWidth = 120;
+        final int elementHeight = 55;
+        final int gap = 25;
+
+        for (ArchiMateLLMResult.ElementSpec e : result.getElements()) {
+            String normalizedType = ArchiMateSchemaValidator.normalizeElementType(e.getType());
+            EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(normalizedType);
+            if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
+                continue;
+            }
+            String name = e.getName() != null ? e.getName() : "";
+            if (elementExistsInModel(model, eClass, name)) {
+                continue;
+            }
+            IArchimateElement element = (IArchimateElement) IArchimateFactory.eINSTANCE.create(eClass);
+            element.setName(name);
+            String elementId = ensureArchiMateId(e.getId());
+            element.setId(elementId);
+            IFolder defaultFolder = model.getDefaultFolderForObject(element);
+            IFolder folder = defaultFolder;
+            if (targetFolder != null && defaultFolder != null && targetFolder.getType() == defaultFolder.getType()) {
+                folder = targetFolder;
+            }
+            if (folder != null) {
+                compound.add(new AddListMemberCommand("ArchiGPT: add element", folder.getElements(), element));
+            }
+            idToConcept.put(elementId, element);
+            if (!elementId.equals(e.getId()) && e.getId() != null && !e.getId().isEmpty()) {
+                idToConcept.put(e.getId().trim(), element);
+            }
+
+            if (targetDiagram != null && result.getDiagram() == null) {
+                IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
+                dmo.setArchimateElement(element);
+                dmo.setBounds(50, diagramY, elementWidth, elementHeight);
+                compound.add(new AddDiagramObjectCommand(targetDiagram, dmo));
+                diagramY += elementHeight + gap;
+            }
+        }
+
+        for (ArchiMateLLMResult.RelationshipSpec r : result.getRelationships()) {
+            String relType = ArchiMateSchemaValidator.normalizeRelationshipType(r.getType());
+            EClass rClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(relType);
+            if (rClass == null || !IArchimatePackage.eINSTANCE.getArchimateRelationship().isSuperTypeOf(rClass)) {
+                continue;
+            }
+            IArchimateConcept sourceConcept = idToConcept.get(r.getSource());
+            if (sourceConcept == null) {
+                sourceConcept = findConceptById(model, r.getSource());
+            }
+            IArchimateConcept targetConcept = idToConcept.get(r.getTarget());
+            if (targetConcept == null) {
+                targetConcept = findConceptById(model, r.getTarget());
+            }
+            if (!(sourceConcept instanceof IArchimateElement) || !(targetConcept instanceof IArchimateElement)) {
+                continue;
+            }
+            IArchimateElement source = (IArchimateElement) sourceConcept;
+            IArchimateElement target = (IArchimateElement) targetConcept;
+            IArchimateRelationship rel = (IArchimateRelationship) IArchimateFactory.eINSTANCE.create(rClass);
+            rel.setName(r.getName() != null ? r.getName() : "");
+            String relId = ensureArchiMateId(r.getId());
+            rel.setId(relId);
+            idToRelationship.put(relId, rel);
+            if (!relId.equals(r.getId()) && r.getId() != null && !r.getId().isEmpty()) {
+                idToRelationship.put(r.getId().trim(), rel);
+            }
+            IFolder relFolder = model.getDefaultFolderForObject(rel);
+            compound.add(new AddRelationshipCommand(rel, source, target, relFolder));
+        }
+
+        if (result.getDiagram() != null && result.getDiagram().getName() != null && !result.getDiagram().getName().isEmpty()) {
+            String diagramName = result.getDiagram().getName().trim();
+            IArchimateDiagramModel existingDiagram = findDiagramByName(model, diagramName);
+            if (existingDiagram != null) {
+                appendDiagramContentCommands(compound, existingDiagram, result.getDiagram(), model, idToConcept, idToRelationship);
+            } else {
+                appendNewDiagramCommands(compound, result.getDiagram(), model, idToConcept, idToRelationship);
+            }
+        }
+
+        appendRemoveCommands(compound, model, targetDiagram, result);
+    }
+
+    /** When DIAGRAMS folder is missing, attach diagram via model list (rare); supports undo. */
+    private static final class AddDiagramToModelFallbackCommand extends Command {
+        private final IArchimateModel model;
+        private final IArchimateDiagramModel diagram;
+
+        AddDiagramToModelFallbackCommand(IArchimateModel model, IArchimateDiagramModel diagram) {
+            super("ArchiGPT: add diagram");
+            this.model = model;
+            this.diagram = diagram;
+        }
+
+        @Override
+        public void execute() {
+            if (model.getDiagramModels() != null) {
+                model.getDiagramModels().add(diagram);
+            }
+            try {
+                diagram.getClass().getMethod("setArchimateModel", IArchimateModel.class).invoke(diagram, model);
+            } catch (Exception ignored) {
+            }
+        }
+
+        @Override
+        public void undo() {
+            if (model.getDiagramModels() != null) {
+                model.getDiagramModels().remove(diagram);
+            }
+        }
+    }
+
+    /** Relationship: set endpoints and add to folder; undo removes and disconnects. */
+    private static final class AddRelationshipCommand extends Command {
+        private final IArchimateRelationship rel;
+        private final IArchimateElement source;
+        private final IArchimateElement target;
+        private final IFolder relFolder;
+
+        AddRelationshipCommand(IArchimateRelationship rel, IArchimateElement source, IArchimateElement target, IFolder relFolder) {
+            super("ArchiGPT: add relationship");
+            this.rel = rel;
+            this.source = source;
+            this.target = target;
+            this.relFolder = relFolder;
+        }
+
+        @Override
+        public void execute() {
+            rel.setSource(source);
+            rel.setTarget(target);
+            if (relFolder != null) {
+                relFolder.getElements().add(rel);
+            }
+        }
+
+        @Override
+        public void undo() {
+            if (relFolder != null) {
+                relFolder.getElements().remove(rel);
+            }
+            rel.disconnect();
+        }
+    }
+
+    private static void appendRemoveCommands(NonNotifyingCompoundCommand compound, IArchimateModel model,
+            IArchimateDiagramModel targetDiagram, ArchiMateLLMResult result) {
+        if (targetDiagram != null && (result.getRemoveElementFromDiagramIds() != null || result.getRemoveRelationshipFromDiagramIds() != null)) {
+            appendRemoveFromDiagramCommands(compound, targetDiagram, model,
+                    result.getRemoveElementFromDiagramIds() != null ? result.getRemoveElementFromDiagramIds() : java.util.Collections.emptyList(),
+                    result.getRemoveRelationshipFromDiagramIds() != null ? result.getRemoveRelationshipFromDiagramIds() : java.util.Collections.emptyList());
+        }
+        // Match Archi delete order: views first, then concepts (see DeleteCommandHandler).
+        appendRemoveDiagramCommands(compound, model, result.getRemoveDiagramNames());
+        appendRemoveFromModelCommands(compound, model, result.getRemoveRelationshipIds(), result.getRemoveElementIds());
+    }
+
+    private static void appendRemoveFromDiagramCommands(NonNotifyingCompoundCommand compound, IArchimateDiagramModel diagram,
+            IArchimateModel model, List<String> elementIds, List<String> relationshipIds) {
+        if (diagram == null || model == null) return;
+        if (elementIds != null) {
+            for (String id : elementIds) {
+                if (id == null || id.trim().isEmpty()) continue;
+                IArchimateConcept concept = findConceptById(model, id.trim());
+                if (concept instanceof IArchimateElement) {
+                    for (Object child : new ArrayList<>(diagram.getChildren())) {
+                        if (child instanceof IDiagramModelArchimateObject) {
+                            if (concept.equals(((IDiagramModelArchimateObject) child).getArchimateElement())) {
+                                compound.add(DiagramCommandFactory.createDeleteDiagramObjectCommand((IDiagramModelArchimateObject) child));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (relationshipIds != null) {
+            for (String id : relationshipIds) {
+                if (id == null || id.trim().isEmpty()) continue;
+                IArchimateConcept concept = findConceptById(model, id.trim());
+                if (concept instanceof IArchimateRelationship) {
+                    for (Object child : new ArrayList<>(diagram.getChildren())) {
+                        if (child instanceof IDiagramModelConnection) {
+                            if (concept.equals(getConnectionRelationship((IDiagramModelConnection) child))) {
+                                compound.add(DiagramCommandFactory.createDeleteDiagramConnectionCommand((IDiagramModelConnection) child));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static void appendRemoveFromModelCommands(NonNotifyingCompoundCommand compound, IArchimateModel model,
+            List<String> relationshipIds, List<String> elementIds) {
+        if (model == null) return;
+        if (relationshipIds != null) {
+            for (String id : relationshipIds) {
+                IArchimateConcept concept = findConceptById(model, id);
+                if (concept instanceof IArchimateRelationship) {
+                    IArchimateRelationship rel = (IArchimateRelationship) concept;
+                    if (model.getDiagramModels() != null) {
+                        for (IDiagramModel dm : model.getDiagramModels()) {
+                            if (!(dm instanceof IArchimateDiagramModel)) continue;
+                            IArchimateDiagramModel diag = (IArchimateDiagramModel) dm;
+                            for (Object child : new ArrayList<>(diag.getChildren())) {
+                                if (child instanceof IDiagramModelConnection) {
+                                    if (rel.equals(getConnectionRelationship((IDiagramModelConnection) child))) {
+                                        compound.add(DiagramCommandFactory.createDeleteDiagramConnectionCommand((IDiagramModelConnection) child));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    compound.add(new DeleteArchimateRelationshipCommand(rel));
+                }
+            }
+        }
+        if (elementIds != null) {
+            for (String id : elementIds) {
+                IArchimateConcept concept = findConceptById(model, id);
+                if (concept instanceof IArchimateElement) {
+                    IArchimateElement element = (IArchimateElement) concept;
+                    if (model.getDiagramModels() != null) {
+                        for (IDiagramModel dm : model.getDiagramModels()) {
+                            if (!(dm instanceof IArchimateDiagramModel)) continue;
+                            IArchimateDiagramModel diag = (IArchimateDiagramModel) dm;
+                            for (Object child : new ArrayList<>(diag.getChildren())) {
+                                if (child instanceof IDiagramModelArchimateObject) {
+                                    if (element.equals(((IDiagramModelArchimateObject) child).getArchimateElement())) {
+                                        compound.add(DiagramCommandFactory.createDeleteDiagramObjectCommand((IDiagramModelArchimateObject) child));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    compound.add(new DeleteArchimateElementCommand(element));
+                }
+            }
+        }
+    }
+
+    private static void appendRemoveDiagramCommands(NonNotifyingCompoundCommand compound, IArchimateModel model, List<String> diagramNames) {
+        if (model == null || diagramNames == null || diagramNames.isEmpty()) return;
+        for (String name : diagramNames) {
+            if (name == null || name.trim().isEmpty()) continue;
+            IArchimateDiagramModel diagram = findDiagramByName(model, name.trim());
+            if (diagram != null) {
+                compound.add(new DeleteDiagramModelCommand(diagram));
+            }
+        }
+    }
+
+    /**
+     * Same mutations as {@link #buildImportCommands} but without CommandStack (e.g. headless tests).
+     */
+    private static void runImportWithoutCommandStack(ArchiMateLLMResult result, IArchimateModel model,
+            IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
         Map<String, IArchimateConcept> idToConcept = new HashMap<>();
         Map<String, IArchimateRelationship> idToRelationship = new HashMap<>();
 
@@ -147,7 +448,6 @@ public final class ArchiMateLLMImporter {
             }
             rel.setSource(source);
             rel.setTarget(target);
-            // Always put relationships in the model's Relations folder, not in element folders (e.g. Technology, Strategy)
             IFolder relFolder = model.getDefaultFolderForObject(rel);
             if (relFolder != null) {
                 relFolder.getElements().add(rel);
@@ -164,12 +464,85 @@ public final class ArchiMateLLMImporter {
             }
         }
 
-        removeFromModel(model, result.getRemoveRelationshipIds(), result.getRemoveElementIds());
-        removeDiagramsFromModel(model, result.getRemoveDiagramNames());
         if (targetDiagram != null && (result.getRemoveElementFromDiagramIds() != null || result.getRemoveRelationshipFromDiagramIds() != null)) {
             removeFiguresFromDiagramOnly(targetDiagram, model,
                     result.getRemoveElementFromDiagramIds() != null ? result.getRemoveElementFromDiagramIds() : java.util.Collections.emptyList(),
                     result.getRemoveRelationshipFromDiagramIds() != null ? result.getRemoveRelationshipFromDiagramIds() : java.util.Collections.emptyList());
+        }
+        removeDiagramsFromModel(model, result.getRemoveDiagramNames());
+        removeFromModel(model, result.getRemoveRelationshipIds(), result.getRemoveElementIds());
+    }
+
+    private static void appendNewDiagramCommands(NonNotifyingCompoundCommand compound, ArchiMateLLMResult.DiagramSpec spec,
+            IArchimateModel model, Map<String, IArchimateConcept> idToConcept, Map<String, IArchimateRelationship> idToRelationship) {
+        IArchimateDiagramModel diagram = IArchimateFactory.eINSTANCE.createArchimateDiagramModel();
+        diagram.setName(spec.getName() != null ? spec.getName() : "New View");
+        if (spec.getViewpoint() != null && !spec.getViewpoint().isEmpty()) {
+            diagram.setViewpoint(spec.getViewpoint());
+        }
+        IFolder diagramsFolder = model.getFolder(FolderType.DIAGRAMS);
+        if (diagramsFolder != null) {
+            compound.add(new AddListMemberCommand("ArchiGPT: add diagram", diagramsFolder.getElements(), diagram));
+        } else {
+            compound.add(new AddDiagramToModelFallbackCommand(model, diagram));
+        }
+        appendDiagramContentCommands(compound, diagram, spec, model, idToConcept, idToRelationship);
+    }
+
+    private static void appendDiagramContentCommands(NonNotifyingCompoundCommand compound, IArchimateDiagramModel diagram,
+            ArchiMateLLMResult.DiagramSpec spec, IArchimateModel model,
+            Map<String, IArchimateConcept> idToConcept, Map<String, IArchimateRelationship> idToRelationship) {
+        if (diagram == null || spec == null) return;
+        Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
+        for (ArchiMateLLMResult.DiagramNodeSpec node : spec.getNodes()) {
+            String elementId = node.getElementId();
+            if (elementId == null || elementId.isEmpty()) continue;
+            IArchimateConcept concept = idToConcept.get(elementId);
+            if (concept == null) {
+                concept = findConceptById(model, elementId);
+            }
+            if (!(concept instanceof IArchimateElement)) continue;
+            IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
+            dmo.setArchimateElement((IArchimateElement) concept);
+            dmo.setBounds(node.getX(), node.getY(), node.getWidth(), node.getHeight());
+            compound.add(new AddDiagramObjectCommand(diagram, dmo));
+            elementIdToDiagramObject.put(elementId, dmo);
+        }
+        for (ArchiMateLLMResult.DiagramConnectionSpec connSpec : spec.getConnections()) {
+            IDiagramModelArchimateObject sourceDmo = elementIdToDiagramObject.get(connSpec.getSourceElementId());
+            IDiagramModelArchimateObject targetDmo = elementIdToDiagramObject.get(connSpec.getTargetElementId());
+            if (sourceDmo == null || targetDmo == null) continue;
+            IDiagramModelConnection conn = IArchimateFactory.eINSTANCE.createDiagramModelConnection();
+            conn.setSource(sourceDmo);
+            conn.setTarget(targetDmo);
+            if (connSpec.getRelationshipId() != null && !connSpec.getRelationshipId().isEmpty()) {
+                IArchimateRelationship rel = idToRelationship.get(connSpec.getRelationshipId());
+                if (rel == null) rel = (IArchimateRelationship) findConceptById(model, connSpec.getRelationshipId());
+                if (rel != null) setConnectionRelationship(conn, rel);
+            }
+            compound.add(new AddDiagramConnectionCommand(diagram, conn));
+        }
+    }
+
+    /** Add diagram connection using the same storage Archi expects; undo removes it. */
+    private static final class AddDiagramConnectionCommand extends Command {
+        private final IArchimateDiagramModel diagram;
+        private final IDiagramModelConnection conn;
+
+        AddDiagramConnectionCommand(IArchimateDiagramModel diagram, IDiagramModelConnection conn) {
+            super("ArchiGPT: add diagram connection");
+            this.diagram = diagram;
+            this.conn = conn;
+        }
+
+        @Override
+        public void execute() {
+            addConnectionToDiagram(diagram, conn);
+        }
+
+        @Override
+        public void undo() {
+            removeConnectionFromDiagram(diagram, conn);
         }
     }
 
@@ -250,6 +623,7 @@ public final class ArchiMateLLMImporter {
                 if (concept instanceof IArchimateRelationship) {
                     removeRelationshipFromDiagrams(model, (IArchimateRelationship) concept);
                     removeConceptFromFolder(concept);
+                    ((IArchimateRelationship) concept).disconnect();
                 }
             }
         }
@@ -439,12 +813,10 @@ public final class ArchiMateLLMImporter {
         if (spec.getViewpoint() != null && !spec.getViewpoint().isEmpty()) {
             diagram.setViewpoint(spec.getViewpoint());
         }
-        // Archi stores diagrams in the DIAGRAMS folder, not in getDiagramModels() (which returns a copy).
         IFolder diagramsFolder = model.getFolder(FolderType.DIAGRAMS);
         if (diagramsFolder != null) {
             diagramsFolder.getElements().add(diagram);
         } else {
-            // Fallback if folder structure not initialized
             if (model.getDiagramModels() != null) {
                 model.getDiagramModels().add(diagram);
             }
