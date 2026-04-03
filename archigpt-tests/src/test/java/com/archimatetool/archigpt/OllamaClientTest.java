@@ -104,25 +104,19 @@ public class OllamaClientTest {
     @Test
     public void generate_simplePrompt_callsGenerateApi() throws IOException {
         responseBody = "{\"response\":\"Generated text\"}";
-        server.removeContext("/");
-        server.createContext("/", new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                lastRequestPath = exchange.getRequestURI().getPath();
-                if ("POST".equals(exchange.getRequestMethod())) {
-                    lastRequestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-                }
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, responseBody.getBytes(StandardCharsets.UTF_8).length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(responseBody.getBytes(StandardCharsets.UTF_8));
-                }
-            }
-        });
         OllamaClient client = new OllamaClient(baseUrl(), "llama3.2");
         String result = client.generate("Hello");
         assertEquals("Generated text", result);
         assertEquals("/api/generate", lastRequestPath);
         assertTrue(lastRequestBody.contains("\"prompt\":\"Hello\""));
+    }
+
+    @Test
+    public void fetchReportedContextTokens_callsShowApi() throws IOException {
+        responseBody = "{\"model_info\":{\"llama.context_length\":65536}}";
+        OllamaClient client = new OllamaClient(baseUrl(), "mymodel");
+        assertEquals(65536, client.fetchReportedContextTokens());
+        assertEquals("/api/show", lastRequestPath);
+        assertTrue(lastRequestBody != null && lastRequestBody.contains("mymodel"));
     }
 }

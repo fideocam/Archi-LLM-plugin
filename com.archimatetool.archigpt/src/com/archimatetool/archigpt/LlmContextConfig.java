@@ -7,8 +7,9 @@ package com.archimatetool.archigpt;
 /**
  * JVM system properties (e.g. in Archi.ini <code>-vmargs</code>):
  * <ul>
- *   <li>{@value #PROP_MAX_XML_CHARS} — max characters of Open Exchange XML embedded in the user message (default {@value #DEFAULT_MAX_XML_CHARS}).</li>
- *   <li>{@value #PROP_OLLAMA_NUM_CTX} — Ollama {@code num_ctx} for the chat request (default {@value #DEFAULT_NUM_CTX}); raise with bigger models.</li>
+ *   <li>{@value #PROP_MAX_XML_CHARS} — max characters of Open Exchange XML (optional). If unset, a budget is computed from Ollama {@code num_ctx} minus system prompt, wrappers, and a reply reserve.</li>
+ *   <li>{@value #PROP_OLLAMA_NUM_CTX} — Ollama {@code num_ctx} (optional). If unset, ArchiGPT calls {@code POST /api/show} and uses the model's reported context length (capped at {@value #OLLAMA_NUM_CTX_MAX}).</li>
+ *   <li>{@value #PROP_CHUNKED_ANALYSIS} — set {@code false} to disable multi-request plain-text analysis for huge models.</li>
  * </ul>
  */
 @SuppressWarnings("nls")
@@ -19,6 +20,9 @@ public final class LlmContextConfig {
 
     /** Property: Ollama options.num_ctx (positive integer). */
     public static final String PROP_OLLAMA_NUM_CTX = "archigpt.ollamaNumCtx";
+
+    /** Property: set to {@code false} to disable multi-pass analysis for huge models (default: enabled when prompt looks like analysis). */
+    public static final String PROP_CHUNKED_ANALYSIS = "archigpt.chunkedAnalysis";
 
     /** Default XML cap: enough for several diagrams + folders on typical models; was 12_000 and was tight for large models. */
     public static final int DEFAULT_MAX_XML_CHARS = 36_000;
@@ -40,6 +44,53 @@ public final class LlmContextConfig {
     private static final int LARGE_FULL_MODEL_XML_CHARS = 48_000;
 
     private LlmContextConfig() {}
+
+    public static int getMaxXmlCharsCeiling() {
+        return MAX_XML_CHARS_CEILING;
+    }
+
+    public static boolean chunkedAnalysisEnabled() {
+        String p = System.getProperty(PROP_CHUNKED_ANALYSIS);
+        if (p == null || p.trim().isEmpty()) {
+            return true;
+        }
+        return !"false".equalsIgnoreCase(p.trim());
+    }
+
+    public static boolean hasExplicitOllamaNumCtx() {
+        String raw = System.getProperty(PROP_OLLAMA_NUM_CTX);
+        return raw != null && !raw.trim().isEmpty();
+    }
+
+    public static boolean hasExplicitMaxXmlChars() {
+        String raw = System.getProperty(PROP_MAX_XML_CHARS);
+        return raw != null && !raw.trim().isEmpty();
+    }
+
+    /**
+     * {@code num_ctx} for the next request: JVM property wins; otherwise use value from Ollama {@code /api/show}
+     * (when {@code reportedByOllama >= 2048}); else {@link #DEFAULT_NUM_CTX}.
+     */
+    public static int resolveOllamaNumCtx(int reportedByOllama) {
+        if (hasExplicitOllamaNumCtx()) {
+            return ollamaNumCtx();
+        }
+        if (reportedByOllama >= 2048) {
+            return Math.min(reportedByOllama, MAX_NUM_CTX);
+        }
+        return DEFAULT_NUM_CTX;
+    }
+
+    /**
+     * Max XML characters: JVM property wins; otherwise derive from {@code num_ctx} and reserved reply space.
+     */
+    public static int resolveMaxXmlChars(int numCtx, int systemPromptChars, int userOverheadChars) {
+        if (hasExplicitMaxXmlChars()) {
+            return maxXmlChars();
+        }
+        return LlmContextBudget.recommendedMaxXmlChars(numCtx, systemPromptChars, userOverheadChars,
+                LlmContextBudget.DEFAULT_REPLY_RESERVE_TOKENS);
+    }
 
     /**
      * Max characters of serialized model XML to include in the user message.

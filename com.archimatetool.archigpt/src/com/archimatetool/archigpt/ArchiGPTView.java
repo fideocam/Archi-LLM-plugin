@@ -579,17 +579,45 @@ public class ArchiGPTView extends ViewPart {
                     + "\". For questions about \"this\" diagram or view, use that diagram's <view> in the XML above.\n\n";
             selectionContext = focusLine + (selectionContextBase != null && !selectionContextBase.isEmpty() ? selectionContextBase : "");
         }
+        final String selectionContextFinal = selectionContext;
+        final String promptFinal = prompt;
 
-        // Build XML for LLM with relevant parts first; cap size (see LlmContextConfig / -Darchigpt.maxXmlChars)
-        int maxXmlChars = LlmContextConfig.maxXmlChars();
-        final int numCtxForOllama = LlmContextConfig.ollamaNumCtx();
+        // Discover Ollama context (POST /api/show) unless -Darchigpt.ollamaNumCtx is set; size XML to leave reply headroom
+        int reportedOllamaCtx = 0;
+        try {
+            reportedOllamaCtx = new OllamaClient().fetchReportedContextTokens();
+        } catch (IOException ignored) {
+        }
+        final int numCtxForOllama = LlmContextConfig.resolveOllamaNumCtx(reportedOllamaCtx);
+        int overheadEstimate = UserMessageBuilder.estimateNonXmlOverheadChars(selectionContextFinal, promptFinal);
+        final int maxXmlChars = LlmContextConfig.resolveMaxXmlChars(numCtxForOllama,
+                ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), overheadEstimate);
+
         List<IFolder> priorityFolders = getPriorityFoldersFromSelection(selectionToUse, model);
-        List<IArchimateDiagramModel> priorityDiagrams = mergeDiagramPriorities(model, prompt,
+        List<IArchimateDiagramModel> priorityDiagrams = mergeDiagramPriorities(model, promptFinal,
                 getPriorityDiagramsFromSelection(selectionToUse, model), activeDiagram);
-        String modelXmlForRequest = model != null
-                ? ModelContextToXml.toXml(model, maxXmlChars, priorityFolders, priorityDiagrams)
+        final String fullModelXml = model != null
+                ? ModelContextToXml.toXml(model, 0, priorityFolders, priorityDiagrams)
                 : "";
-        int fullXmlLength = model != null ? ModelContextToXml.toXml(model).length() : 0;
+        int fullXmlLength = fullModelXml.length();
+
+        boolean useChunkedAnalysis = LlmContextConfig.chunkedAnalysisEnabled()
+                && AnalysisPromptIntent.likelyAnalysisOnly(promptFinal)
+                && fullXmlLength > maxXmlChars;
+        java.util.List<String> chunkList = null;
+        if (useChunkedAnalysis) {
+            chunkList = ModelXmlChunker.split(fullModelXml, maxXmlChars);
+            if (chunkList == null || chunkList.size() <= 1) {
+                useChunkedAnalysis = false;
+                chunkList = null;
+            }
+        }
+        final boolean chunkedAnalysis = useChunkedAnalysis;
+        final java.util.List<String> analysisChunks = chunkList;
+
+        String modelXmlForRequest = model != null && !chunkedAnalysis
+                ? ModelContextToXml.toXml(model, maxXmlChars, priorityFolders, priorityDiagrams)
+                : (chunkedAnalysis && chunkList != null && !chunkList.isEmpty() ? chunkList.get(0) : "");
 
         // Show exactly what we send in the GUI so the user can verify the model is included
         int xmlLen = modelXmlForRequest != null ? modelXmlForRequest.length() : 0;
@@ -598,18 +626,42 @@ public class ArchiGPTView extends ViewPart {
         if (model != null) {
             summary.append("Active model sent to Ollama: \"").append(model.getName() != null ? model.getName() : "").append("\"\n\n");
         }
-        summary.append("Prompt: ").append(prompt).append("\n\n");
-        summary.append("Selection context: ").append(selectionContext != null && !selectionContext.isEmpty() ? selectionContext.trim() : "(none)").append("\n\n");
-        summary.append("Model XML: ").append(xmlLen).append(" characters sent (see box below). ");
+        summary.append("Prompt: ").append(promptFinal).append("\n\n");
+        summary.append("Selection context: ").append(selectionContextFinal != null && !selectionContextFinal.isEmpty() ? selectionContextFinal.trim() : "(none)").append("\n\n");
+        summary.append("Ollama: ");
+        if (LlmContextConfig.hasExplicitOllamaNumCtx()) {
+            summary.append("num_ctx=").append(numCtxForOllama).append(" (manual -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(")");
+        } else if (reportedOllamaCtx > 0) {
+            summary.append("/api/show reports ").append(reportedOllamaCtx).append(" context tokens; using num_ctx=").append(numCtxForOllama);
+        } else {
+            summary.append("could not read context from /api/show; using num_ctx=").append(numCtxForOllama).append(" (default/fallback)");
+        }
+        summary.append(". Max model XML chars=").append(maxXmlChars);
+        if (LlmContextConfig.hasExplicitMaxXmlChars()) {
+            summary.append(" (-D").append(LlmContextConfig.PROP_MAX_XML_CHARS).append(")");
+        } else {
+            summary.append(" (auto: context minus system prompt, wrappers, and ~").append(LlmContextBudget.DEFAULT_REPLY_RESERVE_TOKENS)
+                    .append(" token reply reserve)");
+        }
+        if (chunkedAnalysis && analysisChunks != null) {
+            summary.append("\nChunked analysis: ").append(analysisChunks.size()).append(" sequential requests (plain text only).");
+        }
+        summary.append("\n\nModel XML: ");
+        if (chunkedAnalysis) {
+            summary.append("excerpt 1/").append(analysisChunks != null ? analysisChunks.size() : 0).append(" shown in preview (")
+                    .append(xmlLen).append(" chars this excerpt; full model ").append(fullXmlLength).append(" chars). ");
+        } else {
+            summary.append(xmlLen).append(" characters sent (see box below). ");
+        }
         if (xmlLen > 0 && modelXmlForRequest != null) {
             String preview = modelXmlForRequest.length() > 120 ? modelXmlForRequest.substring(0, 120) + "…" : modelXmlForRequest;
             summary.append("Starts with: ").append(preview.replace("\n", " "));
-        } else {
+        } else if (!chunkedAnalysis) {
             summary.append("(No model open or model empty — open an ArchiMate model so its XML is sent to the LLM.)");
         }
-        if (fullXmlLength > xmlLen) {
-            summary.append("\n[Full model is ").append(fullXmlLength).append(" chars; sent first ").append(maxXmlChars)
-                    .append(" (raise -D").append(LlmContextConfig.PROP_MAX_XML_CHARS).append("=… if your Ollama model has a larger context).]");
+        if (!chunkedAnalysis && fullXmlLength > xmlLen) {
+            summary.append("\n[Full model is ").append(fullXmlLength).append(" chars; single-request cap ").append(maxXmlChars)
+                    .append(" — use analysis-style prompt for multi-excerpt pass, or -D").append(LlmContextConfig.PROP_MAX_XML_CHARS).append(".]");
         }
         if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
             xmlPreviewText.setText(modelXmlForRequest != null ? modelXmlForRequest : "");
@@ -618,9 +670,12 @@ public class ArchiGPTView extends ViewPart {
         final IArchimateDiagramModel targetDiagram = activeDiagram;
         final IArchimateModel modelForImport = model;
 
-        final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXmlForRequest, prompt);
-        summary.append(LlmContextConfig.contextPerformanceWarning(fullXmlLength, xmlLen, userMessage.length(),
-                ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), numCtxForOllama));
+        final String userMessage = chunkedAnalysis ? ""
+                : UserMessageBuilder.buildUserMessage(selectionContextFinal, modelXmlForRequest, promptFinal);
+        if (!chunkedAnalysis) {
+            summary.append(LlmContextConfig.contextPerformanceWarning(fullXmlLength, xmlLen, userMessage.length(),
+                    ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), numCtxForOllama));
+        }
         if (whatWasSentSummaryText != null && !whatWasSentSummaryText.isDisposed()) {
             whatWasSentSummaryText.setText(summary.toString());
         }
@@ -665,6 +720,26 @@ public class ArchiGPTView extends ViewPart {
                     }
                     updateStatus("Connection OK. Sending request to Ollama. Waiting for response (this may take a minute)…");
                     try {
+                        if (analysisChunks != null && !analysisChunks.isEmpty()) {
+                            StringBuilder acc = new StringBuilder();
+                            for (int i = 0; i < analysisChunks.size(); i++) {
+                                if (userRequestedCancel || monitor.isCanceled()) {
+                                    finishRequest("Cancelled.");
+                                    return Status.CANCEL_STATUS;
+                                }
+                                updateStatus("Analysis excerpt " + (i + 1) + "/" + analysisChunks.size() + " — Ollama…");
+                                String chunkUser = ChunkAnalysisPrompt.buildChunkUserMessage(
+                                        analysisChunks.get(i), i + 1, analysisChunks.size(), selectionContextFinal, promptFinal);
+                                String part = client.generateWithSystemPrompt(ChunkAnalysisPrompt.SYSTEM_PROMPT, chunkUser,
+                                        currentConnectionRef, numCtxForOllama);
+                                acc.append("--- Excerpt ").append(i + 1).append("/").append(analysisChunks.size())
+                                        .append(" ---\n\n").append(part).append("\n\n");
+                            }
+                            String combined = acc.toString().trim();
+                            finishRequest("Analysis result (" + analysisChunks.size()
+                                    + " excerpts; large model sent in multiple passes):\n\n" + combined);
+                            return Status.OK_STATUS;
+                        }
                         raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, userMessage, currentConnectionRef,
                                 numCtxForOllama);
                     } catch (IOException e) {
@@ -711,6 +786,15 @@ public class ArchiGPTView extends ViewPart {
                                     importMessage[0] = "The ArchiMate model used for this request is no longer open; import skipped. Open the model and run the request again.";
                                 } else {
                                     IArchimateModel model = modelForImport;
+                                    boolean droppedLlmDiagram = false;
+                                    if (targetDiagram != null && !DiagramCreationIntent.userAskedForBrandNewView(promptFinal)) {
+                                        if (resultToImport.getDiagram() != null
+                                                && resultToImport.getDiagram().getName() != null
+                                                && !resultToImport.getDiagram().getName().isEmpty()) {
+                                            resultToImport.setDiagram(null);
+                                            droppedLlmDiagram = true;
+                                        }
+                                    }
                                     ArchiMateLLMImporter.importIntoModel(resultToImport, model, targetFolder, targetDiagram);
                                     StringBuilder where = new StringBuilder();
                                     if (targetFolder != null) {
@@ -731,6 +815,9 @@ public class ArchiGPTView extends ViewPart {
                                     int remFromDiagEl = resultToImport.getRemoveElementFromDiagramIds().size();
                                     int remFromDiagRel = resultToImport.getRemoveRelationshipFromDiagramIds().size();
                                     String action = "Imported into model \"" + model.getName() + "\"" + where;
+                                    if (droppedLlmDiagram) {
+                                        action += " The reply included a new \"diagram\" block; it was ignored because a diagram was open and you did not ask for a new view — shapes were added to the open view.";
+                                    }
                                     if (addEl > 0 || addRel > 0) action += ": " + addEl + " elements, " + addRel + " relationships added.";
                                     if (remEl > 0 || remRel > 0) action += (addEl > 0 || addRel > 0 ? " " : ": ") + "Removed " + remEl + " elements, " + remRel + " relationships from model.";
                                     if (remFromDiagEl > 0 || remFromDiagRel > 0) action += (addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0 ? " " : ": ") + "Removed " + remFromDiagEl + " element(s), " + remFromDiagRel + " relationship(s) from diagram only.";

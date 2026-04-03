@@ -37,4 +37,11 @@ public final class UserMessageBuilder {
         }
         return sb.toString();
     }
+
+    /** Approximate user-message size excluding model XML (for context budgeting). */
+    public static int estimateNonXmlOverheadChars(String selectionContext, String prompt) {
+        int sc = selectionContext != null ? selectionContext.length() : 0;
+        int pr = prompt != null ? prompt.length() : 0;
+        return sc + pr + 120;
+    }
 }

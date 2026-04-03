@@ -40,6 +40,34 @@ public class OllamaClient {
      *
      * @return true if the server responds
      */
+    /**
+     * Ask Ollama for the running model's reported context length (tokens), via {@code POST /api/show}.
+     * Returns 0 if the call fails or no value is found (caller should fall back to defaults).
+     */
+    public int fetchReportedContextTokens() throws IOException {
+        String body = "{\"model\":\"" + escapeJson(model) + "\"}";
+        URL url = new URL(baseUrl + "/api/show");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        try {
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(10000);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+            int code = conn.getResponseCode();
+            String resp = readFully(code >= 400 ? conn.getErrorStream() : conn.getInputStream());
+            if (code >= 400) {
+                return 0;
+            }
+            return OllamaShowResponseParser.parseContextTokens(resp);
+        } finally {
+            conn.disconnect();
+        }
+    }
+
     public boolean checkConnection() {
         try {
             URL url = new URL(baseUrl + "/api/tags");
