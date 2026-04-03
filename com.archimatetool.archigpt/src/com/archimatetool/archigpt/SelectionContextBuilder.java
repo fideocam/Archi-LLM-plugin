@@ -14,6 +14,7 @@ import com.archimatetool.model.IArchimateDiagramModel;
 import com.archimatetool.model.IArchimateElement;
 import com.archimatetool.model.IArchimateRelationship;
 import com.archimatetool.model.IFolder;
+import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IDiagramModelConnection;
 
@@ -74,23 +75,27 @@ public final class SelectionContextBuilder {
     private static String describeSelectedObject(Object obj) {
         // Selection on diagram canvas: figure (element on diagram) or connection (relationship on diagram)
         if (obj instanceof IDiagramModelArchimateObject) {
-            IArchimateElement element = ((IDiagramModelArchimateObject) obj).getArchimateElement();
+            IDiagramModelArchimateObject dmo = (IDiagramModelArchimateObject) obj;
+            IArchimateElement element = dmo.getArchimateElement();
             if (element != null) {
                 String type = element.eClass().getName();
                 String name = nullToEmpty(element.getName());
                 String id = element.getId() != null ? element.getId() : "";
-                return String.format("Element %s \"%s\" (id=%s)", type, name, id);
+                String onView = diagramContextSuffix(dmo.getDiagramModel());
+                return String.format("Element %s \"%s\" (id=%s)%s", type, name, id, onView);
             }
         }
         if (obj instanceof IDiagramModelConnection) {
-            IArchimateRelationship rel = getConnectionRelationship((IDiagramModelConnection) obj);
+            IDiagramModelConnection dmc = (IDiagramModelConnection) obj;
+            IArchimateRelationship rel = getConnectionRelationship(dmc);
             if (rel != null) {
                 String type = rel.eClass().getName();
                 String name = nullToEmpty(rel.getName());
                 String id = rel.getId() != null ? rel.getId() : "";
                 String src = rel.getSource() != null ? nullToEmpty(rel.getSource().getName()) : "?";
                 String tgt = rel.getTarget() != null ? nullToEmpty(rel.getTarget().getName()) : "?";
-                return String.format("Relationship %s \"%s\" (id=%s) from \"%s\" to \"%s\"", type, name, id, src, tgt);
+                String onView = diagramContextSuffix(dmc.getDiagramModel());
+                return String.format("Relationship %s \"%s\" (id=%s) from \"%s\" to \"%s\"%s", type, name, id, src, tgt, onView);
             }
         }
         if (obj instanceof IArchimateConcept) {
@@ -125,6 +130,18 @@ public final class SelectionContextBuilder {
 
     private static String nullToEmpty(String s) {
         return s == null ? "" : s;
+    }
+
+    /** Suffix naming the diagram so the LLM can tie canvas selection to the correct &lt;view&gt; in XML. */
+    private static String diagramContextSuffix(IDiagramModel dm) {
+        if (!(dm instanceof IArchimateDiagramModel)) {
+            return "";
+        }
+        String vn = nullToEmpty(((IArchimateDiagramModel) dm).getName());
+        if (vn.isEmpty()) {
+            return "";
+        }
+        return " on diagram \"" + vn + "\"";
     }
 
     private static String tryGetName(Object obj) {

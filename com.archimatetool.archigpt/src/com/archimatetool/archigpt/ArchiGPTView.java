@@ -65,9 +65,6 @@ public class ArchiGPTView extends ViewPart {
 
     public static final String ID = "com.archimatetool.archigpt.view";
 
-    /** Max characters of model XML to send so the request fits typical Ollama context (4k–8k tokens). Kept conservative so the LLM receives the full message. */
-    private static final int LLM_MAX_XML_CHARS = 12_000;
-
     private Text promptText;
     private Text whatWasSentSummaryText;
     private Text xmlPreviewText;
@@ -191,8 +188,8 @@ public class ArchiGPTView extends ViewPart {
 
         whatWasSentSummaryText = new Text(debugComposite, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
         GridData whatWasSentData = new GridData(SWT.FILL, SWT.FILL, true, false);
-        whatWasSentData.minimumHeight = 70;
-        whatWasSentData.heightHint = 70;
+        whatWasSentData.minimumHeight = 100;
+        whatWasSentData.heightHint = 120;
         whatWasSentSummaryText.setLayoutData(whatWasSentData);
         whatWasSentSummaryText.setMessage("(Prompt, selection, and XML length appear here when you click Ask ArchiGPT)");
 
@@ -449,17 +446,19 @@ public class ArchiGPTView extends ViewPart {
         return d != null && d.getName() != null ? d.getName().length() : 0;
     }
 
+    /**
+     * Order diagrams for capped XML: open editor diagram first, then selection, then names explicitly
+     * mentioned in the prompt. Prompt substring matches must not override what the user is viewing
+     * (otherwise the first views in XML can be the wrong ones and fill the context limit).
+     */
     private static List<IArchimateDiagramModel> mergeDiagramPriorities(IArchimateModel model, String prompt,
-            List<IArchimateDiagramModel> fromSelection) {
+            List<IArchimateDiagramModel> fromSelection, IArchimateDiagramModel activeEditorDiagram) {
         List<IArchimateDiagramModel> fromPrompt = diagramsMentionedInPrompt(model, prompt);
-        if (fromPrompt.isEmpty()) {
-            return fromSelection != null ? fromSelection : new ArrayList<>();
-        }
         Set<IArchimateDiagramModel> seen = new LinkedHashSet<>();
         List<IArchimateDiagramModel> merged = new ArrayList<>();
-        for (IArchimateDiagramModel d : fromPrompt) {
-            if (d != null && model.equals(d.getArchimateModel()) && seen.add(d)) {
-                merged.add(d);
+        if (activeEditorDiagram != null && model != null && model.equals(activeEditorDiagram.getArchimateModel())) {
+            if (seen.add(activeEditorDiagram)) {
+                merged.add(activeEditorDiagram);
             }
         }
         if (fromSelection != null) {
@@ -467,6 +466,11 @@ public class ArchiGPTView extends ViewPart {
                 if (d != null && seen.add(d)) {
                     merged.add(d);
                 }
+            }
+        }
+        for (IArchimateDiagramModel d : fromPrompt) {
+            if (d != null && model != null && model.equals(d.getArchimateModel()) && seen.add(d)) {
+                merged.add(d);
             }
         }
         return merged;
@@ -560,18 +564,30 @@ public class ArchiGPTView extends ViewPart {
         } catch (Exception e) {
             selectionToUse = lastModelSelection;
         }
-        String selectionContext = selectionToUse != null ? SelectionContextBuilder.buildFromStructuredSelection(selectionToUse) : "";
+        String selectionContextBase = selectionToUse != null ? SelectionContextBuilder.buildFromStructuredSelection(selectionToUse) : "";
 
         IWorkbenchWindow windowEarly = getViewSite() != null ? getViewSite().getWorkbenchWindow() : null;
         List<IArchimateModel> openModels = IEditorModelManager.INSTANCE.getModels();
         IArchimateModel model = resolveActiveModel(windowEarly, selectionToUse, lastModelSelection, openModels);
+        IArchimateDiagramModel activeDiagram = resolveTargetDiagram(selectionToUse, model, windowEarly);
 
-        // Build XML for LLM with relevant parts first; cap size so it fits Ollama context
+        String selectionContext = selectionContextBase;
+        if (activeDiagram != null) {
+            String dn = activeDiagram.getName() != null && !activeDiagram.getName().isEmpty()
+                    ? activeDiagram.getName() : "(unnamed)";
+            String focusLine = "Primary diagram (open in editor): \"" + dn
+                    + "\". For questions about \"this\" diagram or view, use that diagram's <view> in the XML above.\n\n";
+            selectionContext = focusLine + (selectionContextBase != null && !selectionContextBase.isEmpty() ? selectionContextBase : "");
+        }
+
+        // Build XML for LLM with relevant parts first; cap size (see LlmContextConfig / -Darchigpt.maxXmlChars)
+        int maxXmlChars = LlmContextConfig.maxXmlChars();
+        final int numCtxForOllama = LlmContextConfig.ollamaNumCtx();
         List<IFolder> priorityFolders = getPriorityFoldersFromSelection(selectionToUse, model);
         List<IArchimateDiagramModel> priorityDiagrams = mergeDiagramPriorities(model, prompt,
-                getPriorityDiagramsFromSelection(selectionToUse, model));
+                getPriorityDiagramsFromSelection(selectionToUse, model), activeDiagram);
         String modelXmlForRequest = model != null
-                ? ModelContextToXml.toXml(model, LLM_MAX_XML_CHARS, priorityFolders, priorityDiagrams)
+                ? ModelContextToXml.toXml(model, maxXmlChars, priorityFolders, priorityDiagrams)
                 : "";
         int fullXmlLength = model != null ? ModelContextToXml.toXml(model).length() : 0;
 
@@ -592,20 +608,22 @@ public class ArchiGPTView extends ViewPart {
             summary.append("(No model open or model empty — open an ArchiMate model so its XML is sent to the LLM.)");
         }
         if (fullXmlLength > xmlLen) {
-            summary.append("\n[Full model is ").append(fullXmlLength).append(" chars; truncated so the LLM receives the message.]");
-        }
-        if (whatWasSentSummaryText != null && !whatWasSentSummaryText.isDisposed()) {
-            whatWasSentSummaryText.setText(summary.toString());
+            summary.append("\n[Full model is ").append(fullXmlLength).append(" chars; sent first ").append(maxXmlChars)
+                    .append(" (raise -D").append(LlmContextConfig.PROP_MAX_XML_CHARS).append("=… if your Ollama model has a larger context).]");
         }
         if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
             xmlPreviewText.setText(modelXmlForRequest != null ? modelXmlForRequest : "");
         }
-        IWorkbenchWindow window = windowEarly != null ? windowEarly : (getViewSite() != null ? getViewSite().getWorkbenchWindow() : null);
         final IFolder targetFolder = resolveTargetFolder(selectionToUse, model);
-        final IArchimateDiagramModel targetDiagram = resolveTargetDiagram(selectionToUse, model, window);
+        final IArchimateDiagramModel targetDiagram = activeDiagram;
         final IArchimateModel modelForImport = model;
 
         final String userMessage = UserMessageBuilder.buildUserMessage(selectionContext, modelXmlForRequest, prompt);
+        summary.append(LlmContextConfig.contextPerformanceWarning(fullXmlLength, xmlLen, userMessage.length(),
+                ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), numCtxForOllama));
+        if (whatWasSentSummaryText != null && !whatWasSentSummaryText.isDisposed()) {
+            whatWasSentSummaryText.setText(summary.toString());
+        }
 
         final Text responseWidget = responseText;
         userRequestedCancel = false;
@@ -647,7 +665,8 @@ public class ArchiGPTView extends ViewPart {
                     }
                     updateStatus("Connection OK. Sending request to Ollama. Waiting for response (this may take a minute)…");
                     try {
-                        raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, userMessage, currentConnectionRef, 32768);
+                        raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, userMessage, currentConnectionRef,
+                                numCtxForOllama);
                     } catch (IOException e) {
                         if (userRequestedCancel || monitor.isCanceled()) {
                             finishRequest("Cancelled. Ollama request stopped.");
