@@ -26,6 +26,16 @@ Published benchmarks (see [toonformat.dev](https://toonformat.dev/)) report **lo
 
 TOON tends to shine when the payload is dominated by **many homogeneous records** (e.g. hundreds of elements with the same columns). It helps less when the payload is **deeply nested, irregular, or mostly unique keys**—there, JSON or domain-specific XML might be similar or preferable.
 
+### 1.3 Byte compression (gzip, zip, etc.) is not a substitute
+
+Tools often ask whether they can **compress** JSON or XML before sending it to the LLM. For typical **chat completion** APIs, the answer for **token cost** is **no**:
+
+- **gzip / deflate / zip** reduce **bytes** (disk, HTTP payload). The model, however, consumes **text tokens** from the **decompressed** string you place in `messages[].content`. After you decompress, the token count is essentially the same as for uncompressed pretty-printed text of the same data (minor differences only if the tokenizer treats rare byte sequences differently—which is not how you save money).
+- **HTTP Content-Encoding** saves bandwidth between your client and the provider; it does **not** reduce the number of tokens charged for the prompt.
+- Encoding binary compressed data as **base64** in the prompt **increases** size and usually **increases** tokens versus sending plain text.
+
+What **does** lower token usage for the same information is changing the **actual text** of the prompt: **minification** (drop whitespace), **shorter or fewer keys**, **truncation and prioritization**, or a **denser encoding** such as TOON or hand-rolled tables—not wrapping the same verbose XML/JSON in a byte compressor.
+
 ---
 
 ## 2. “Between the plugin and the LLM”
@@ -132,7 +142,7 @@ This plugin today is **ArchiMate-centric**; BPMN appears here only as a **parall
 
 ## 6. Summary
 
-- **TOON** is a **token-oriented, JSON-equivalent** notation with **tabular arrays** and explicit structure—well suited to **LLM prompts**, not a replacement for ArchiMate or BPMN **file** formats.
+- **TOON** is a **token-oriented, JSON-equivalent** notation with **tabular arrays** and explicit structure—well suited to **LLM prompts**, not a replacement for ArchiMate or BPMN **file** formats. It addresses **token count in the prompt text**, which **byte-level compression (gzip, etc.) does not** for standard chat APIs (see §1.3).
 - **ArchiMate** (`.archimate` / exchange XML) and **BPMN** (`.bpmn` XML) stay as they are on disk; you **project** selected facts into JSON and then **TOON** for the LLM.
 - **ArchiMate:** natural fit for element/relationship/view tables plus a digest.
 - **BPMN:** natural fit for process, node, and sequence-flow tables; layout optional.

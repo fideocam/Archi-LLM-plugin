@@ -15,12 +15,54 @@ public class LlmContextConfigTest {
     public void clearProps() {
         System.clearProperty(LlmContextConfig.PROP_MAX_XML_CHARS);
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_NUM_CTX);
+        System.clearProperty(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS);
+        System.clearProperty(LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP);
     }
 
     @Test
     public void defaults_whenNoProperties() {
         assertEquals(LlmContextConfig.DEFAULT_MAX_XML_CHARS, LlmContextConfig.maxXmlChars());
         assertEquals(LlmContextConfig.DEFAULT_NUM_CTX, LlmContextConfig.ollamaNumCtx());
+        assertEquals(LlmContextConfig.DEFAULT_OLLAMA_READ_TIMEOUT_MS, LlmContextConfig.resolveOllamaReadTimeoutMs());
+        assertEquals(LlmContextConfig.DEFAULT_OLLAMA_REPORTED_CTX_CAP,
+                LlmContextConfig.resolveOllamaNumCtx(131_072));
+        assertEquals(LlmContextConfig.DEFAULT_OLLAMA_REPORTED_CTX_CAP,
+                LlmContextConfig.resolveOllamaNumCtx(0));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_smallReportedUnchanged() {
+        assertEquals(8192, LlmContextConfig.resolveOllamaNumCtx(8192));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_explicitPropertyIgnoresCap() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_NUM_CTX, "131072");
+        assertEquals(131_072, LlmContextConfig.resolveOllamaNumCtx(4096));
+    }
+
+    @Test
+    public void ollamaReportedCtxCap_readsProperty() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP, "65536");
+        assertEquals(65_536, LlmContextConfig.resolveOllamaNumCtx(131_072));
+    }
+
+    @Test
+    public void ollamaReadTimeout_readsProperty() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS, "240000");
+        assertEquals(240_000, LlmContextConfig.resolveOllamaReadTimeoutMs());
+    }
+
+    @Test
+    public void ollamaReadTimeout_zeroMeansUnlimited() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS, "0");
+        assertEquals(0, LlmContextConfig.resolveOllamaReadTimeoutMs());
+    }
+
+    @Test
+    public void ollamaReadTimeout_clampedToTwoHours() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS, "999999999");
+        assertEquals(7_200_000, LlmContextConfig.resolveOllamaReadTimeoutMs());
     }
 
     @Test

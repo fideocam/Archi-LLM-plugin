@@ -655,9 +655,15 @@ public class ArchiGPTView extends ViewPart {
         if (LlmContextConfig.hasExplicitOllamaNumCtx()) {
             summary.append("num_ctx=").append(numCtxForOllama).append(" (manual -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(")");
         } else if (reportedOllamaCtx > 0) {
-            summary.append("/api/show reports ").append(reportedOllamaCtx).append(" context tokens; using num_ctx=").append(numCtxForOllama);
+            summary.append("/api/show reports ").append(reportedOllamaCtx).append(" max context tokens; requesting num_ctx=")
+                    .append(numCtxForOllama);
+            if (reportedOllamaCtx > numCtxForOllama) {
+                summary.append(" (capped for speed; raise -D").append(LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP)
+                        .append(" or set -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(" to use more)");
+            }
         } else {
-            summary.append("could not read context from /api/show; using num_ctx=").append(numCtxForOllama).append(" (default/fallback)");
+            summary.append("could not read context from /api/show; using num_ctx=").append(numCtxForOllama)
+                    .append(" (capped default; set -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(" to override)");
         }
         summary.append(". Max model XML chars=").append(maxXmlChars);
         if (LlmContextConfig.hasExplicitMaxXmlChars()) {
@@ -665,6 +671,19 @@ public class ArchiGPTView extends ViewPart {
         } else {
             summary.append(" (auto: context minus system prompt, wrappers, and ~").append(LlmContextBudget.DEFAULT_REPLY_RESERVE_TOKENS)
                     .append(" token reply reserve)");
+        }
+        int ollamaReadTimeoutMs = LlmContextConfig.resolveOllamaReadTimeoutMs();
+        summary.append("\nOllama HTTP read timeout: ");
+        if (ollamaReadTimeoutMs == 0) {
+            summary.append("unlimited (-D").append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append("=0)");
+        } else {
+            summary.append(ollamaReadTimeoutMs / 1000).append(" s");
+            if (!LlmContextConfig.hasExplicitOllamaReadTimeout()) {
+                summary.append(" (default). If you see \"Read timed out\", increase -D")
+                        .append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append(" in Archi.ini vmargs.");
+            } else {
+                summary.append(" (-D").append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append(")");
+            }
         }
         if (chunkedAnalysis && analysisPlannedChunks != null) {
             summary.append("\nChunked analysis: ").append(analysisPlannedChunks.size()).append(" sequential requests (plain text only)");
@@ -869,7 +888,14 @@ public class ArchiGPTView extends ViewPart {
                         finishRequest("Cancelled. Ollama request stopped.");
                         return Status.CANCEL_STATUS;
                     }
-                    toShow = "Error: " + e.getMessage() + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + OllamaClient.DEFAULT_MODEL + ").";
+                    String err = e.getMessage() != null ? e.getMessage() : "";
+                    toShow = "Error: " + err + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + OllamaClient.DEFAULT_MODEL + ").";
+                    if (err.toLowerCase(Locale.ROOT).contains("timed out")) {
+                        toShow += "\n\nIf Ollama is running, a common cause is an oversized num_ctx (the model’s reported max context can be 128k+ and makes each request very slow). Try -D"
+                                + LlmContextConfig.PROP_OLLAMA_NUM_CTX + "=8192 in Archi.ini (vmargs), or adjust -D"
+                                + LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP + " (default 32768). Raise -D"
+                                + LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS + " only when completions truly need more than two minutes.";
+                    }
                     if (raw != null) {
                         toShow += "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                     }
