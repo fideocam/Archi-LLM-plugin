@@ -10,6 +10,7 @@ package com.archimatetool.archigpt;
  *   <li>{@value #PROP_MAX_XML_CHARS} — max characters of Open Exchange XML (optional). If unset, a budget is computed from Ollama {@code num_ctx} minus system prompt, wrappers, and a reply reserve.</li>
  *   <li>{@value #PROP_OLLAMA_NUM_CTX} — Ollama {@code num_ctx} (optional). If unset, ArchiGPT calls {@code POST /api/show} and uses the model's reported context length (capped at {@value #OLLAMA_NUM_CTX_MAX}).</li>
  *   <li>{@value #PROP_CHUNKED_ANALYSIS} — set {@code false} to disable multi-request plain-text analysis for huge models.</li>
+ *   <li>{@value #PROP_SEMANTIC_CHUNKED_ANALYSIS} — set {@code false} to use plain string-split chunks instead of folder/view-based chunks.</li>
  * </ul>
  */
 @SuppressWarnings("nls")
@@ -23,6 +24,9 @@ public final class LlmContextConfig {
 
     /** Property: set to {@code false} to disable multi-pass analysis for huge models (default: enabled when prompt looks like analysis). */
     public static final String PROP_CHUNKED_ANALYSIS = "archigpt.chunkedAnalysis";
+
+    /** Property: set to {@code false} to fall back to splitting the full XML string instead of folder/view-based chunks. */
+    public static final String PROP_SEMANTIC_CHUNKED_ANALYSIS = "archigpt.semanticChunkedAnalysis";
 
     /** Default XML cap: enough for several diagrams + folders on typical models; was 12_000 and was tight for large models. */
     public static final int DEFAULT_MAX_XML_CHARS = 36_000;
@@ -51,6 +55,14 @@ public final class LlmContextConfig {
 
     public static boolean chunkedAnalysisEnabled() {
         String p = System.getProperty(PROP_CHUNKED_ANALYSIS);
+        if (p == null || p.trim().isEmpty()) {
+            return true;
+        }
+        return !"false".equalsIgnoreCase(p.trim());
+    }
+
+    public static boolean semanticChunkedAnalysisEnabled() {
+        String p = System.getProperty(PROP_SEMANTIC_CHUNKED_ANALYSIS);
         if (p == null || p.trim().isEmpty()) {
             return true;
         }

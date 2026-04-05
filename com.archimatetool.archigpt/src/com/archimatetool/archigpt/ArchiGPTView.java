@@ -604,20 +604,43 @@ public class ArchiGPTView extends ViewPart {
         boolean useChunkedAnalysis = LlmContextConfig.chunkedAnalysisEnabled()
                 && AnalysisPromptIntent.likelyAnalysisOnly(promptFinal)
                 && fullXmlLength > maxXmlChars;
-        java.util.List<String> chunkList = null;
-        if (useChunkedAnalysis) {
-            chunkList = ModelXmlChunker.split(fullModelXml, maxXmlChars);
-            if (chunkList == null || chunkList.size() <= 1) {
+        List<ModelContextChunkPlanner.PlannedChunk> plannedChunks = null;
+        boolean usedSemanticChunks = false;
+        if (useChunkedAnalysis && model != null) {
+            if (LlmContextConfig.semanticChunkedAnalysisEnabled()) {
+                plannedChunks = ModelContextChunkPlanner.plan(model, maxXmlChars, priorityFolders, priorityDiagrams);
+                usedSemanticChunks = plannedChunks != null && !plannedChunks.isEmpty();
+            }
+            if (plannedChunks == null || plannedChunks.isEmpty()) {
+                List<String> legacy = ModelXmlChunker.split(fullModelXml, maxXmlChars);
+                plannedChunks = new ArrayList<>();
+                for (String s : legacy) {
+                    plannedChunks.add(new ModelContextChunkPlanner.PlannedChunk("XML excerpt", s));
+                }
+                usedSemanticChunks = false;
+            } else if (plannedChunks.size() > ModelXmlChunker.MAX_CHUNKS) {
+                List<String> legacy = ModelXmlChunker.split(fullModelXml, maxXmlChars);
+                plannedChunks = new ArrayList<>();
+                for (String s : legacy) {
+                    plannedChunks.add(new ModelContextChunkPlanner.PlannedChunk("XML excerpt", s));
+                }
+                usedSemanticChunks = false;
+            }
+            if (plannedChunks.size() <= 1) {
                 useChunkedAnalysis = false;
-                chunkList = null;
+                plannedChunks = null;
+                usedSemanticChunks = false;
             }
         }
         final boolean chunkedAnalysis = useChunkedAnalysis;
-        final java.util.List<String> analysisChunks = chunkList;
+        final List<ModelContextChunkPlanner.PlannedChunk> analysisPlannedChunks = plannedChunks;
+        final String analysisModelDigest = chunkedAnalysis && model != null ? ModelContextDigest.toPlainText(model) : "";
+        final boolean analysisChunksSemantic = usedSemanticChunks;
 
         String modelXmlForRequest = model != null && !chunkedAnalysis
                 ? ModelContextToXml.toXml(model, maxXmlChars, priorityFolders, priorityDiagrams)
-                : (chunkedAnalysis && chunkList != null && !chunkList.isEmpty() ? chunkList.get(0) : "");
+                : (chunkedAnalysis && analysisPlannedChunks != null && !analysisPlannedChunks.isEmpty()
+                        ? analysisPlannedChunks.get(0).xml : "");
 
         // Show exactly what we send in the GUI so the user can verify the model is included
         int xmlLen = modelXmlForRequest != null ? modelXmlForRequest.length() : 0;
@@ -643,13 +666,20 @@ public class ArchiGPTView extends ViewPart {
             summary.append(" (auto: context minus system prompt, wrappers, and ~").append(LlmContextBudget.DEFAULT_REPLY_RESERVE_TOKENS)
                     .append(" token reply reserve)");
         }
-        if (chunkedAnalysis && analysisChunks != null) {
-            summary.append("\nChunked analysis: ").append(analysisChunks.size()).append(" sequential requests (plain text only).");
+        if (chunkedAnalysis && analysisPlannedChunks != null) {
+            summary.append("\nChunked analysis: ").append(analysisPlannedChunks.size()).append(" sequential requests (plain text only)");
+            if (analysisChunksSemantic) {
+                summary.append("; chunks by folder/view; full-model digest prepended to each request");
+            } else {
+                summary.append("; chunks by fixed-size splits of the full XML (folder/view chunking disabled or unavailable)");
+            }
+            summary.append(". A model digest is prepended to each chunked request.");
         }
         summary.append("\n\nModel XML: ");
         if (chunkedAnalysis) {
-            summary.append("excerpt 1/").append(analysisChunks != null ? analysisChunks.size() : 0).append(" shown in preview (")
-                    .append(xmlLen).append(" chars this excerpt; full model ").append(fullXmlLength).append(" chars). ");
+            summary.append("excerpt 1/").append(analysisPlannedChunks != null ? analysisPlannedChunks.size() : 0)
+                    .append(" shown in preview (").append(xmlLen).append(" chars this excerpt; full model ")
+                    .append(fullXmlLength).append(" chars). ");
         } else {
             summary.append(xmlLen).append(" characters sent (see box below). ");
         }
@@ -720,23 +750,28 @@ public class ArchiGPTView extends ViewPart {
                     }
                     updateStatus("Connection OK. Sending request to Ollama. Waiting for response (this may take a minute)…");
                     try {
-                        if (analysisChunks != null && !analysisChunks.isEmpty()) {
+                        if (analysisPlannedChunks != null && !analysisPlannedChunks.isEmpty()) {
                             StringBuilder acc = new StringBuilder();
-                            for (int i = 0; i < analysisChunks.size(); i++) {
+                            for (int i = 0; i < analysisPlannedChunks.size(); i++) {
                                 if (userRequestedCancel || monitor.isCanceled()) {
                                     finishRequest("Cancelled.");
                                     return Status.CANCEL_STATUS;
                                 }
-                                updateStatus("Analysis excerpt " + (i + 1) + "/" + analysisChunks.size() + " — Ollama…");
-                                String chunkUser = ChunkAnalysisPrompt.buildChunkUserMessage(
-                                        analysisChunks.get(i), i + 1, analysisChunks.size(), selectionContextFinal, promptFinal);
+                                ModelContextChunkPlanner.PlannedChunk pc = analysisPlannedChunks.get(i);
+                                String scope = pc.title != null && !pc.title.isEmpty() ? " — " + pc.title : "";
+                                updateStatus("Analysis excerpt " + (i + 1) + "/" + analysisPlannedChunks.size() + scope + " — Ollama…");
+                                String chunkUser = ChunkAnalysisPrompt.buildChunkUserMessage(analysisModelDigest, pc.title, pc.xml,
+                                        i + 1, analysisPlannedChunks.size(), selectionContextFinal, promptFinal);
                                 String part = client.generateWithSystemPrompt(ChunkAnalysisPrompt.SYSTEM_PROMPT, chunkUser,
                                         currentConnectionRef, numCtxForOllama);
-                                acc.append("--- Excerpt ").append(i + 1).append("/").append(analysisChunks.size())
-                                        .append(" ---\n\n").append(part).append("\n\n");
+                                acc.append("--- Excerpt ").append(i + 1).append("/").append(analysisPlannedChunks.size());
+                                if (pc.title != null && !pc.title.isEmpty()) {
+                                    acc.append(" (").append(pc.title).append(")");
+                                }
+                                acc.append(" ---\n\n").append(part).append("\n\n");
                             }
                             String combined = acc.toString().trim();
-                            finishRequest("Analysis result (" + analysisChunks.size()
+                            finishRequest("Analysis result (" + analysisPlannedChunks.size()
                                     + " excerpts; large model sent in multiple passes):\n\n" + combined);
                             return Status.OK_STATUS;
                         }

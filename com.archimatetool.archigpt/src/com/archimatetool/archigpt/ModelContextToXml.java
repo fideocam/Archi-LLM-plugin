@@ -19,6 +19,7 @@ import com.archimatetool.model.IArchimateRelationship;
 import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IFolder;
+import com.archimatetool.model.FolderType;
 
 /**
  * Builds a simple XML dump of the model structure (elements, relationships, and diagrams with their content)
@@ -49,6 +50,77 @@ public final class ModelContextToXml {
         return toXml(model, 0, null, null);
     }
 
+    /** Top-level folders with priority first (same rules as full serialization). */
+    public static List<IFolder> orderedTopFolders(IArchimateModel model, List<IFolder> priorityFolders) {
+        if (model == null) return new ArrayList<>();
+        return orderFolders(model.getFolders(), priorityFolders);
+    }
+
+    /** All diagrams with priority first (same rules as full serialization). */
+    public static List<IArchimateDiagramModel> orderedDiagramsForModel(IArchimateModel model,
+            List<IArchimateDiagramModel> priorityDiagrams) {
+        if (model == null) return new ArrayList<>();
+        return orderDiagrams(collectAllDiagramModels(model), priorityDiagrams);
+    }
+
+    /**
+     * Valid Open Exchange fragment: declaration + one complete top-level folder subtree (all nested folders and elements).
+     */
+    public static String toXmlFolderSubtree(IArchimateModel model, IFolder folder) {
+        if (model == null || folder == null) return "";
+        StringBuilder sb = new StringBuilder();
+        appendDocumentPreamble(sb);
+        sb.append("  <archimateModel name=\"").append(escape(model.getName())).append("\">\n");
+        appendOneFolder(sb, folder, 2);
+        sb.append("  </archimateModel>\n</model>\n");
+        return sb.toString();
+    }
+
+    /**
+     * Elements and relationships stored directly on {@code folder} (not in child folders), wrapped as a minimal folder.
+     */
+    public static String toXmlFolderDirectMembersOnly(IArchimateModel model, IFolder folder) {
+        if (model == null || folder == null) return "";
+        StringBuilder sb = new StringBuilder();
+        appendDocumentPreamble(sb);
+        sb.append("  <archimateModel name=\"").append(escape(model.getName())).append("\">\n");
+        String name = folder.getName() != null ? folder.getName() : "";
+        String typeName = folder.getType() != null ? folder.getType().getName() : "";
+        sb.append("    <folder name=\"").append(escape(name)).append("\" type=\"").append(escape(typeName)).append("\">\n");
+        if (folder.getElements() != null) {
+            for (EObject e : folder.getElements()) {
+                if (e instanceof IArchimateElement) {
+                    appendElement(sb, (IArchimateElement) e, 3);
+                }
+            }
+        }
+        sb.append("    </folder>\n");
+        sb.append("  </archimateModel>\n</model>\n");
+        return sb.toString();
+    }
+
+    /** Views/diagrams only (no element folders). */
+    public static String toXmlDiagramList(IArchimateModel model, List<IArchimateDiagramModel> diagrams) {
+        if (model == null || diagrams == null || diagrams.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        appendDocumentPreamble(sb);
+        sb.append("  <archimateModel name=\"").append(escape(model.getName())).append("\">\n");
+        appendViewsAndDiagrams(sb, diagrams, 2);
+        sb.append("  </archimateModel>\n</model>\n");
+        return sb.toString();
+    }
+
+    /** True if this folder is the Archi "Views" / diagrams container (diagram XML is emitted via {@link #toXmlDiagramList}). */
+    public static boolean isDiagramsContainerFolder(IFolder folder) {
+        return folder != null && folder.getType() == FolderType.DIAGRAMS;
+    }
+
+    private static void appendDocumentPreamble(StringBuilder sb) {
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        sb.append("<model\n  xmlns=\"").append(NS_ARCHIMATE).append("\"\n  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n  xmlns:diagram=\"")
+                .append(NS_DIAGRAM).append("\"\n  xsi:schemaLocation=\"").append(SCHEMA_LOCATION).append("\">\n");
+    }
+
     /**
      * Serialize the model to XML, putting priority folders and diagrams first so they fit within the context limit.
      *
@@ -63,9 +135,7 @@ public final class ModelContextToXml {
         if (model == null) return "";
         int effectiveMax = maxChars > 0 ? maxChars : MAX_XML_CHARS;
         StringBuilder sb = new StringBuilder();
-        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        sb.append("<model\n  xmlns=\"").append(NS_ARCHIMATE).append("\"\n  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n  xmlns:diagram=\"")
-          .append(NS_DIAGRAM).append("\"\n  xsi:schemaLocation=\"").append(SCHEMA_LOCATION).append("\">\n");
+        appendDocumentPreamble(sb);
         sb.append("  <archimateModel name=\"").append(escape(model.getName())).append("\">\n");
 
         List<IFolder> orderedFolders = orderFolders(model.getFolders(), priorityFolders);
