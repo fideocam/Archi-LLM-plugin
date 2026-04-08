@@ -65,6 +65,9 @@ public class ArchiGPTView extends ViewPart {
 
     public static final String ID = "com.archimatetool.archigpt.view";
 
+    /** Max characters of combined per-chunk user messages shown in the Debug XML preview when analysis is chunked. */
+    private static final int MAX_CHUNKED_DEBUG_PREVIEW_CHARS = 250_000;
+
     private Text promptText;
     private Text whatWasSentSummaryText;
     private Text xmlPreviewText;
@@ -370,6 +373,27 @@ public class ArchiGPTView extends ViewPart {
     }
 
     /**
+     * Resolves the ArchiMate model for the given editor. Diagram editors often adapt {@link IDiagramModel} or
+     * {@link IArchimateDiagramModel} but not {@link IArchimateModel} directly; without this, we fall back to a
+     * stale tree selection and send the wrong XML when several models are open.
+     */
+    private static IArchimateModel tryGetArchimateModelFromEditor(IEditorPart editor) {
+        if (editor == null) return null;
+        try {
+            IArchimateModel m = editor.getAdapter(IArchimateModel.class);
+            if (m != null) return m;
+            IArchimateDiagramModel adm = editor.getAdapter(IArchimateDiagramModel.class);
+            if (adm != null) return adm.getArchimateModel();
+            Object dm = editor.getAdapter(IDiagramModel.class);
+            if (dm instanceof IArchimateDiagramModel) {
+                return ((IArchimateDiagramModel) dm).getArchimateModel();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    /**
      * Prefer the model for the active Archi editor; otherwise infer from selection (tree or diagram canvas);
      * then cached model-tree selection; finally the first open model. Avoids sending the wrong model when several are open.
      */
@@ -379,11 +403,9 @@ public class ArchiGPTView extends ViewPart {
         try {
             if (window != null && window.getActivePage() != null) {
                 IEditorPart editor = window.getActivePage().getActiveEditor();
-                if (editor != null) {
-                    IArchimateModel fromEditor = editor.getAdapter(IArchimateModel.class);
-                    if (fromEditor != null && isInOpenList(fromEditor, openModels)) {
-                        return fromEditor;
-                    }
+                IArchimateModel fromEditor = tryGetArchimateModelFromEditor(editor);
+                if (fromEditor != null && isInOpenList(fromEditor, openModels)) {
+                    return fromEditor;
                 }
             }
         } catch (Exception ignored) {
@@ -414,6 +436,28 @@ public class ArchiGPTView extends ViewPart {
             if (obj instanceof IArchimateModelObject) {
                 IArchimateModel m = ((IArchimateModelObject) obj).getArchimateModel();
                 if (m != null) return m;
+            }
+            if (obj instanceof IArchimateDiagramModel) {
+                IArchimateModel m = ((IArchimateDiagramModel) obj).getArchimateModel();
+                if (m != null) return m;
+            }
+            if (obj instanceof IFolder) {
+                IArchimateModel m = ((IFolder) obj).getArchimateModel();
+                if (m != null) return m;
+            }
+            if (obj instanceof IDiagramModelArchimateObject) {
+                IDiagramModel dm = ((IDiagramModelArchimateObject) obj).getDiagramModel();
+                if (dm instanceof IArchimateDiagramModel) {
+                    IArchimateModel m = ((IArchimateDiagramModel) dm).getArchimateModel();
+                    if (m != null) return m;
+                }
+            }
+            if (obj instanceof IDiagramModelConnection) {
+                IDiagramModel dm = ((IDiagramModelConnection) obj).getDiagramModel();
+                if (dm instanceof IArchimateDiagramModel) {
+                    IArchimateModel m = ((IArchimateDiagramModel) dm).getArchimateModel();
+                    if (m != null) return m;
+                }
             }
         }
         return null;
@@ -549,26 +593,36 @@ public class ArchiGPTView extends ViewPart {
             return;
         }
 
-        IStructuredSelection selectionToUse = null;
+        IStructuredSelection selectionCandidate = null;
         try {
             IWorkbenchWindow window = getViewSite().getWorkbenchWindow();
             if (window != null && window.getSelectionService() != null) {
                 ISelection current = window.getSelectionService().getSelection();
                 if (SelectionContextBuilder.isModelSelection(current)) {
-                    selectionToUse = (IStructuredSelection) current;
+                    selectionCandidate = (IStructuredSelection) current;
                 }
-                if (selectionToUse == null) {
-                    selectionToUse = lastModelSelection;
+                if (selectionCandidate == null) {
+                    selectionCandidate = lastModelSelection;
                 }
             }
         } catch (Exception e) {
-            selectionToUse = lastModelSelection;
+            selectionCandidate = lastModelSelection;
         }
-        String selectionContextBase = selectionToUse != null ? SelectionContextBuilder.buildFromStructuredSelection(selectionToUse) : "";
 
         IWorkbenchWindow windowEarly = getViewSite() != null ? getViewSite().getWorkbenchWindow() : null;
         List<IArchimateModel> openModels = IEditorModelManager.INSTANCE.getModels();
-        IArchimateModel model = resolveActiveModel(windowEarly, selectionToUse, lastModelSelection, openModels);
+        IArchimateModel model = resolveActiveModel(windowEarly, selectionCandidate, lastModelSelection, openModels);
+
+        IStructuredSelection selectionToUse = selectionCandidate;
+        if (selectionToUse != null && model != null) {
+            IArchimateModel selModel = getModelFromStructuredSelection(selectionToUse);
+            if (selModel != null && !selModel.equals(model)) {
+                selectionToUse = null;
+                lastModelSelection = null;
+            }
+        }
+
+        String selectionContextBase = selectionToUse != null ? SelectionContextBuilder.buildFromStructuredSelection(selectionToUse) : "";
         IArchimateDiagramModel activeDiagram = resolveTargetDiagram(selectionToUse, model, windowEarly);
 
         String selectionContext = selectionContextBase;
@@ -606,6 +660,7 @@ public class ArchiGPTView extends ViewPart {
                 && fullXmlLength > maxXmlChars;
         List<ModelContextChunkPlanner.PlannedChunk> plannedChunks = null;
         boolean usedSemanticChunks = false;
+        boolean diagramChunkFilterApplied = false;
         if (useChunkedAnalysis && model != null) {
             if (LlmContextConfig.semanticChunkedAnalysisEnabled()) {
                 plannedChunks = ModelContextChunkPlanner.plan(model, maxXmlChars, priorityFolders, priorityDiagrams);
@@ -626,21 +681,50 @@ public class ArchiGPTView extends ViewPart {
                 }
                 usedSemanticChunks = false;
             }
+            if (plannedChunks != null && !plannedChunks.isEmpty() && activeDiagram != null) {
+                String dname = activeDiagram.getName();
+                if (dname != null && !dname.trim().isEmpty()) {
+                    int before = plannedChunks.size();
+                    List<ModelContextChunkPlanner.PlannedChunk> filtered = ModelContextChunkPlanner
+                            .filterChunksForPrimaryDiagram(plannedChunks, activeDiagram);
+                    if (filtered.size() < before) {
+                        plannedChunks = new ArrayList<>(filtered);
+                        diagramChunkFilterApplied = true;
+                    }
+                }
+            }
             if (plannedChunks.size() <= 1) {
                 useChunkedAnalysis = false;
-                plannedChunks = null;
                 usedSemanticChunks = false;
             }
+        }
+        ModelContextChunkPlanner.PlannedChunk singleAnalysisChunk = null;
+        if (!useChunkedAnalysis && plannedChunks != null && plannedChunks.size() == 1) {
+            singleAnalysisChunk = plannedChunks.get(0);
+        }
+        if (plannedChunks != null && plannedChunks.size() <= 1) {
+            plannedChunks = null;
         }
         final boolean chunkedAnalysis = useChunkedAnalysis;
         final List<ModelContextChunkPlanner.PlannedChunk> analysisPlannedChunks = plannedChunks;
         final String analysisModelDigest = chunkedAnalysis && model != null ? ModelContextDigest.toPlainText(model) : "";
         final boolean analysisChunksSemantic = usedSemanticChunks;
+        final boolean primaryDiagramChunkFilterApplied = diagramChunkFilterApplied;
 
-        String modelXmlForRequest = model != null && !chunkedAnalysis
-                ? ModelContextToXml.toXml(model, maxXmlChars, priorityFolders, priorityDiagrams)
-                : (chunkedAnalysis && analysisPlannedChunks != null && !analysisPlannedChunks.isEmpty()
-                        ? analysisPlannedChunks.get(0).xml : "");
+        String modelXmlForRequest;
+        if (model == null) {
+            modelXmlForRequest = "";
+        } else if (!chunkedAnalysis) {
+            if (singleAnalysisChunk != null) {
+                modelXmlForRequest = singleAnalysisChunk.xml;
+            } else {
+                modelXmlForRequest = ModelContextToXml.toXml(model, maxXmlChars, priorityFolders, priorityDiagrams);
+            }
+        } else if (analysisPlannedChunks != null && !analysisPlannedChunks.isEmpty()) {
+            modelXmlForRequest = analysisPlannedChunks.get(0).xml;
+        } else {
+            modelXmlForRequest = "";
+        }
 
         // Show exactly what we send in the GUI so the user can verify the model is included
         int xmlLen = modelXmlForRequest != null ? modelXmlForRequest.length() : 0;
@@ -693,11 +777,15 @@ public class ArchiGPTView extends ViewPart {
                 summary.append("; chunks by fixed-size splits of the full XML (folder/view chunking disabled or unavailable)");
             }
             summary.append(". A model digest is prepended to each chunked request.");
+            if (primaryDiagramChunkFilterApplied) {
+                summary.append("\nA diagram was open in the editor: excerpts were limited to chunk(s) that contain that view, so the model is not asked about diagram content on folder-only XML.");
+            }
+            summary.append("\nDebug XML preview: lists the full user message for every excerpt (same system prompt each time).");
         }
         summary.append("\n\nModel XML: ");
         if (chunkedAnalysis) {
             summary.append("excerpt 1/").append(analysisPlannedChunks != null ? analysisPlannedChunks.size() : 0)
-                    .append(" shown in preview (").append(xmlLen).append(" chars this excerpt; full model ")
+                    .append(" also at start of debug transcript below (").append(xmlLen).append(" chars; full serialized model ")
                     .append(fullXmlLength).append(" chars). ");
         } else {
             summary.append(xmlLen).append(" characters sent (see box below). ");
@@ -713,7 +801,12 @@ public class ArchiGPTView extends ViewPart {
                     .append(" — use analysis-style prompt for multi-excerpt pass, or -D").append(LlmContextConfig.PROP_MAX_XML_CHARS).append(".]");
         }
         if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
-            xmlPreviewText.setText(modelXmlForRequest != null ? modelXmlForRequest : "");
+            if (chunkedAnalysis && analysisPlannedChunks != null && !analysisPlannedChunks.isEmpty()) {
+                xmlPreviewText.setText(buildChunkedOllamaDebugPreview(analysisModelDigest, analysisPlannedChunks,
+                        selectionContextFinal, promptFinal, MAX_CHUNKED_DEBUG_PREVIEW_CHARS));
+            } else {
+                xmlPreviewText.setText(modelXmlForRequest != null ? modelXmlForRequest : "");
+            }
         }
         final IFolder targetFolder = resolveTargetFolder(selectionToUse, model);
         final IArchimateDiagramModel targetDiagram = activeDiagram;
@@ -909,6 +1002,39 @@ public class ArchiGPTView extends ViewPart {
             }
         };
         currentJob.schedule();
+    }
+
+    /**
+     * Full user message for each chunked analysis call (matches what is sent to Ollama) for the Debug XML preview.
+     */
+    private static String buildChunkedOllamaDebugPreview(String digest,
+            List<ModelContextChunkPlanner.PlannedChunk> chunks, String selectionContext, String prompt, int maxChars) {
+        if (chunks == null || chunks.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Each Ollama request uses the same system prompt (ChunkAnalysisPrompt.SYSTEM_PROMPT in plugin source).\n\n");
+        int n = chunks.size();
+        for (int i = 0; i < n; i++) {
+            String header = "════════ USER MESSAGE — excerpt " + (i + 1) + "/" + n + " ════════\n";
+            if (sb.length() + header.length() > maxChars - 64) {
+                sb.append("\n… [preview truncated at ").append(maxChars).append(" characters]\n");
+                break;
+            }
+            sb.append(header);
+            ModelContextChunkPlanner.PlannedChunk pc = chunks.get(i);
+            String um = ChunkAnalysisPrompt.buildChunkUserMessage(digest, pc.title, pc.xml, i + 1, n, selectionContext, prompt);
+            if (sb.length() + um.length() > maxChars) {
+                int take = maxChars - sb.length() - 32;
+                if (take > 0) {
+                    sb.append(um, 0, take);
+                }
+                sb.append("\n… [truncated]\n");
+                break;
+            }
+            sb.append(um).append("\n\n");
+        }
+        return sb.toString();
     }
 
     @Override

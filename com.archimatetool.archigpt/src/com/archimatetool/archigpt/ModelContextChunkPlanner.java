@@ -28,6 +28,59 @@ public final class ModelContextChunkPlanner {
     private ModelContextChunkPlanner() {}
 
     /**
+     * When the user has a primary diagram open, keep only chunks whose XML contains that view (or whose title is that
+     * view). Prevents multi-pass analysis from asking the LLM about diagram content on folder-only excerpts (which
+     * encourages hallucination). If nothing matches, returns {@code chunks} unchanged.
+     */
+    public static List<PlannedChunk> filterChunksForPrimaryDiagram(List<PlannedChunk> chunks, String diagramName) {
+        if (chunks == null || chunks.isEmpty() || diagramName == null || diagramName.trim().isEmpty()) {
+            return chunks;
+        }
+        String name = diagramName.trim();
+        String escapedName = escapeXmlAttr(name);
+        String singleTitle = diagramTitle(name);
+        List<PlannedChunk> hit = new ArrayList<>();
+        for (PlannedChunk pc : chunks) {
+            if (chunkCoversNamedView(pc, escapedName, singleTitle)) {
+                hit.add(pc);
+            }
+        }
+        return hit.isEmpty() ? chunks : hit;
+    }
+
+    /** @see #filterChunksForPrimaryDiagram(List, String) */
+    public static List<PlannedChunk> filterChunksForPrimaryDiagram(List<PlannedChunk> chunks, IArchimateDiagramModel diagram) {
+        if (diagram == null) {
+            return chunks;
+        }
+        String n = diagram.getName();
+        return filterChunksForPrimaryDiagram(chunks, n != null ? n : "");
+    }
+
+    private static boolean chunkCoversNamedView(PlannedChunk pc, String escapedName, String singleViewTitle) {
+        if (pc.title != null && !pc.title.isEmpty()) {
+            if (pc.title.equals(singleViewTitle) || pc.title.startsWith(singleViewTitle + " (part")) {
+                return true;
+            }
+            if (pc.title.startsWith("Views: ") && pc.xml != null && pc.xml.contains("<view ") && pc.xml.contains("name=\"" + escapedName + "\"")) {
+                return true;
+            }
+        }
+        return pc.xml != null && pc.xml.contains("<view ") && pc.xml.contains("name=\"" + escapedName + "\"");
+    }
+
+    private static String diagramTitle(String diagramName) {
+        return "View: " + (diagramName == null || diagramName.isEmpty() ? "(unnamed)" : diagramName);
+    }
+
+    private static String escapeXmlAttr(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    }
+
+    /**
      * Plan chunks: each top-level model folder (except the Views/diagrams container) as its own subtree or finer splits;
      * then diagram batches. Every {@code xml} is at most {@code maxCharsPerChunk} (after {@link ModelXmlChunker} splits
      * when a single folder or view is still too large).

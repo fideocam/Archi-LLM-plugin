@@ -11,6 +11,8 @@ public final class ChunkAnalysisPrompt {
             + "A MODEL DIGEST at the start of the user message summarizes the whole model (counts, folder breakdown); "
             + "the XML is only one part. It is excerpt k of n of the SAME model. "
             + "Answer using this excerpt and the digest; if the excerpt lacks detail, say what is missing. "
+            + "If the user’s selection context refers to a specific diagram/view but this XML fragment has no <view> for that name, "
+            + "say that this excerpt does not contain that view—do not invent diagram content. "
             + "Reply in plain text only (not JSON). Be concise.";
 
     private ChunkAnalysisPrompt() {}
