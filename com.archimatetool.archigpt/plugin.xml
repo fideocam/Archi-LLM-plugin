@@ -75,5 +75,36 @@
             </parameter>
          </command>
       </menuContribution>
+      <menuContribution
+            locationURI="menu:com.archimatetool.archigpt.menu?after=additions">
+         <command
+               commandId="com.archimatetool.archigpt.openPreferences"
+               id="com.archimatetool.archigpt.openPreferences.menu"
+               label="ArchiGPT Preferences…"
+               style="push">
+         </command>
+      </menuContribution>
+   </extension>
+   <extension
+         point="org.eclipse.ui.preferencePages">
+      <page
+            id="com.archimatetool.archigpt.preferences"
+            name="ArchiGPT"
+            class="com.archimatetool.archigpt.preferences.ArchiGPTPreferencePage">
+      </page>
+   </extension>
+   <extension
+         point="org.eclipse.ui.commands">
+      <command
+            id="com.archimatetool.archigpt.openPreferences"
+            name="ArchiGPT Preferences">
+      </command>
+   </extension>
+   <extension
+         point="org.eclipse.ui.handlers">
+      <handler
+            class="com.archimatetool.archigpt.handlers.OpenArchiGPTPreferencesHandler"
+            commandId="com.archimatetool.archigpt.openPreferences">
+      </handler>
    </extension>
 </plugin>

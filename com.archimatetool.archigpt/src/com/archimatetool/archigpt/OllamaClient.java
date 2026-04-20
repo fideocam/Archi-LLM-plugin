@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
  * Connects to a locally running Ollama instance and requests a completion for the given prompt.
  */
 @SuppressWarnings("nls")
-public class OllamaClient {
+public class OllamaClient implements LLMClient {
 
     public static final String DEFAULT_BASE_URL = "http://localhost:11434";
     public static final String DEFAULT_MODEL = "llama3.2";
@@ -44,6 +44,7 @@ public class OllamaClient {
      * Ask Ollama for the running model's reported context length (tokens), via {@code POST /api/show}.
      * Returns 0 if the call fails or no value is found (caller should fall back to defaults).
      */
+    @Override
     public int fetchReportedContextTokens() throws IOException {
         String body = "{\"model\":\"" + escapeJson(model) + "\"}";
         URL url = new URL(baseUrl + "/api/show");
@@ -68,6 +69,7 @@ public class OllamaClient {
         }
     }
 
+    @Override
     public boolean checkConnection() {
         try {
             URL url = new URL(baseUrl + "/api/tags");
@@ -112,6 +114,7 @@ public class OllamaClient {
      * @param numCtx          requested context length in tokens (e.g. 8192); if &lt;= 0, Ollama default is used
      * @return the model's response text
      */
+    @Override
     public String generateWithSystemPrompt(String systemPrompt, String userPrompt,
             AtomicReference<HttpURLConnection> connectionHolder, int numCtx) throws IOException {
         String requestBody = buildChatRequestJson(systemPrompt, userPrompt, numCtx);
@@ -285,5 +288,14 @@ public class OllamaClient {
             }
         }
         return sb.toString().trim();
+    }
+
+    @Override
+    public String endpointSummary() {
+        try {
+            return new URL(baseUrl).getHost() + ":" + model;
+        } catch (Exception e) {
+            return baseUrl;
+        }
     }
 }

@@ -8,7 +8,9 @@ Bundle-Localization: plugin
 Bundle-RequiredExecutionEnvironment: JavaSE-1.8
 Require-Bundle: org.eclipse.ui,
  org.eclipse.core.runtime,
+ org.eclipse.core.commands,
  org.eclipse.jface,
  org.eclipse.swt,
+ org.eclipse.ui.ide,
  com.archimatetool.editor
 Automatic-Module-Name: com.archimatetool.archigpt

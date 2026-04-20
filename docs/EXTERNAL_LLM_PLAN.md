@@ -2,11 +2,13 @@
 
 This document describes what would be needed to support **external online LLM services** (e.g. OpenAI, Anthropic, Azure OpenAI, Google AI) in addition to the current **local Ollama** integration.
 
+**Implementation status:** Branch `feature/external-llm` adds **Window → Preferences → ArchiGPT**, a shared **`LLMClient`** abstraction, and implementations for **Ollama** (unchanged default), **OpenAI**, **Azure OpenAI** (full chat-completions URL + `api-key` header), **Anthropic Messages**, **Google Gemini** (`generateContent`), and **Custom** (OpenAI-compatible). Ask ArchiGPT uses the configured provider. See inline help on the preference page for URLs and privacy.
+
 ---
 
-## 1. Current state
+## 1. Current state (design baseline)
 
-- **Single backend:** The plugin uses `OllamaClient` only, talking to `http://localhost:11434` (Ollama’s default).
+- **Original shipping behaviour:** The plugin used `OllamaClient` only, talking to `http://localhost:11434` (Ollama’s default). The multi-provider work above keeps Ollama as the default when Preferences are unchanged.
 - **No configuration UI:** Base URL and model are fixed in code (`DEFAULT_BASE_URL`, `DEFAULT_MODEL`). There is no preferences/settings screen for the user.
 - **Chat API:** Requests are sent to Ollama’s `/api/chat` with a JSON body: `model`, `stream: false`, `messages: [ { role: "system", content: "..." }, { role: "user", content: "..." } ]`, and optional `options.num_ctx`.
 - **No API key:** Ollama is local and does not require authentication.
@@ -98,14 +100,16 @@ Allow users to choose an **LLM provider** and send requests to **external online
 
 ## 4. Implementation phases (suggested)
 
-| Phase | Scope | Deliverables |
-|-------|--------|--------------|
-| **1. Config and preferences** | Store provider, API key, URL, model in Eclipse preferences; no UI yet (or a simple dialog). | Preference keys and a small `ArchiGPTPreferences` (or similar) helper to read/write them. |
-| **2. Client abstraction** | Define `LLMClient` interface; refactor `OllamaClient` to implement it and take URL/model from preferences. | Interface + current Ollama behaviour behind it; view uses the interface. |
-| **3. OpenAI-compatible client** | Implement a client for OpenAI Chat Completions (and optionally Azure OpenAI with the same format). | New class; factory returns it when provider is `openai` or `azure_openai`. |
-| **4. Preferences UI** | Add ArchiGPT preferences page: provider, API key, URL, model, test connection. | User can switch to OpenAI (or custom endpoint) and set API key. |
-| **5. Anthropic / Google** | Implement clients for Anthropic and Google if desired; map their request/response to the same interface. | More provider options in the dropdown. |
-| **6. Polish** | Error messages, HTTPS check, optional retries, README update. | Production-ready behaviour and docs. |
+
+| Phase                           | Scope                                                                                                      | Deliverables                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **1. Config and preferences**   | Store provider, API key, URL, model in Eclipse preferences; no UI yet (or a simple dialog).                | Preference keys and a small `ArchiGPTPreferences` (or similar) helper to read/write them. |
+| **2. Client abstraction**       | Define `LLMClient` interface; refactor `OllamaClient` to implement it and take URL/model from preferences. | Interface + current Ollama behaviour behind it; view uses the interface.                  |
+| **3. OpenAI-compatible client** | Implement a client for OpenAI Chat Completions (and optionally Azure OpenAI with the same format).         | New class; factory returns it when provider is `openai` or `azure_openai`.                |
+| **4. Preferences UI**           | Add ArchiGPT preferences page: provider, API key, URL, model, test connection.                             | User can switch to OpenAI (or custom endpoint) and set API key.                           |
+| **5. Anthropic / Google**       | Implement clients for Anthropic and Google if desired; map their request/response to the same interface.   | More provider options in the dropdown.                                                    |
+| **6. Polish**                   | Error messages, HTTPS check, optional retries, README update.                                              | Production-ready behaviour and docs.                                                      |
+
 
 ---
 

@@ -592,6 +592,12 @@ public class ArchiGPTView extends ViewPart {
             responseText.setText("Open an ArchiMate model first. ArchiGPT will use it as context.");
             return;
         }
+        try {
+            LlmClientFactory.validateConfiguration();
+        } catch (IllegalArgumentException ex) {
+            responseText.setText(ex.getMessage());
+            return;
+        }
 
         IStructuredSelection selectionCandidate = null;
         try {
@@ -636,15 +642,21 @@ public class ArchiGPTView extends ViewPart {
         final String selectionContextFinal = selectionContext;
         final String promptFinal = prompt;
 
-        // Discover Ollama context (POST /api/show) unless -Darchigpt.ollamaNumCtx is set; size XML to leave reply headroom
+        // Context budget: Ollama uses /api/show + num_ctx; cloud providers use preference "estimated context" for XML cap.
+        final boolean useOllama = ArchiGPTPreferences.isOllama();
         int reportedOllamaCtx = 0;
-        try {
-            reportedOllamaCtx = new OllamaClient().fetchReportedContextTokens();
-        } catch (IOException ignored) {
+        if (useOllama) {
+            try {
+                OllamaClient probe = new OllamaClient(ArchiGPTPreferences.getBaseUrl(), ArchiGPTPreferences.getModel());
+                reportedOllamaCtx = probe.fetchReportedContextTokens();
+            } catch (IOException ignored) {
+            }
         }
-        final int numCtxForOllama = LlmContextConfig.resolveOllamaNumCtx(reportedOllamaCtx);
+        final int numCtxForBudget = useOllama ? LlmContextConfig.resolveOllamaNumCtx(reportedOllamaCtx)
+                : ArchiGPTPreferences.getEstimatedContextTokens();
+        final int completionParam = useOllama ? numCtxForBudget : ArchiGPTPreferences.getMaxOutputTokens();
         int overheadEstimate = UserMessageBuilder.estimateNonXmlOverheadChars(selectionContextFinal, promptFinal);
-        final int maxXmlChars = LlmContextConfig.resolveMaxXmlChars(numCtxForOllama,
+        final int maxXmlChars = LlmContextConfig.resolveMaxXmlChars(numCtxForBudget,
                 ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), overheadEstimate);
 
         List<IFolder> priorityFolders = getPriorityFoldersFromSelection(selectionToUse, model);
@@ -731,25 +743,34 @@ public class ArchiGPTView extends ViewPart {
         StringBuilder summary = new StringBuilder();
         summary.append("Payload order: model XML first (views before folders within the cap), then your request.\n\n");
         if (model != null) {
-            summary.append("Active model sent to Ollama: \"").append(model.getName() != null ? model.getName() : "").append("\"\n\n");
+            summary.append("Active model sent to LLM: \"").append(model.getName() != null ? model.getName() : "").append("\"\n\n");
         }
         summary.append("Prompt: ").append(promptFinal).append("\n\n");
         summary.append("Selection context: ").append(selectionContextFinal != null && !selectionContextFinal.isEmpty() ? selectionContextFinal.trim() : "(none)").append("\n\n");
-        summary.append("Ollama: ");
-        if (LlmContextConfig.hasExplicitOllamaNumCtx()) {
-            summary.append("num_ctx=").append(numCtxForOllama).append(" (manual -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(")");
-        } else if (reportedOllamaCtx > 0) {
-            summary.append("/api/show reports ").append(reportedOllamaCtx).append(" max context tokens; requesting num_ctx=")
-                    .append(numCtxForOllama);
-            if (reportedOllamaCtx > numCtxForOllama) {
-                summary.append(" (capped for speed; raise -D").append(LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP)
-                        .append(" or set -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(" to use more)");
+        if (useOllama) {
+            summary.append("Ollama: ");
+            if (LlmContextConfig.hasExplicitOllamaNumCtx()) {
+                summary.append("num_ctx=").append(numCtxForBudget).append(" (manual -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(")");
+            } else if (reportedOllamaCtx > 0) {
+                summary.append("/api/show reports ").append(reportedOllamaCtx).append(" max context tokens; requesting num_ctx=")
+                        .append(numCtxForBudget);
+                if (reportedOllamaCtx > numCtxForBudget) {
+                    summary.append(" (capped for speed; raise -D").append(LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP)
+                            .append(" or set -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(" to use more)");
+                }
+            } else {
+                summary.append("could not read context from /api/show; using num_ctx=").append(numCtxForBudget)
+                        .append(" (capped default; set -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(" to override)");
             }
+            summary.append(". ");
         } else {
-            summary.append("could not read context from /api/show; using num_ctx=").append(numCtxForOllama)
-                    .append(" (capped default; set -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(" to override)");
+            summary.append("LLM provider: ").append(ArchiGPTPreferences.providerDisplayName())
+                    .append(". Model: ").append(ArchiGPTPreferences.getModel())
+                    .append(". Estimated input context (for XML cap): ").append(numCtxForBudget).append(" tokens")
+                    .append(". Max output tokens: ").append(completionParam).append(".\n")
+                    .append("Cloud requests send your XML and prompts to the provider—configure in Window → Preferences → ArchiGPT.\n\n");
         }
-        summary.append(". Max model XML chars=").append(maxXmlChars);
+        summary.append("Max model XML chars=").append(maxXmlChars);
         if (LlmContextConfig.hasExplicitMaxXmlChars()) {
             summary.append(" (-D").append(LlmContextConfig.PROP_MAX_XML_CHARS).append(")");
         } else {
@@ -757,7 +778,7 @@ public class ArchiGPTView extends ViewPart {
                     .append(" token reply reserve)");
         }
         int ollamaReadTimeoutMs = LlmContextConfig.resolveOllamaReadTimeoutMs();
-        summary.append("\nOllama HTTP read timeout: ");
+        summary.append("\nHTTP read timeout (LLM request): ");
         if (ollamaReadTimeoutMs == 0) {
             summary.append("unlimited (-D").append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append("=0)");
         } else {
@@ -814,9 +835,9 @@ public class ArchiGPTView extends ViewPart {
 
         final String userMessage = chunkedAnalysis ? ""
                 : UserMessageBuilder.buildUserMessage(selectionContextFinal, modelXmlForRequest, promptFinal);
-        if (!chunkedAnalysis) {
+        if (!chunkedAnalysis && useOllama) {
             summary.append(LlmContextConfig.contextPerformanceWarning(fullXmlLength, xmlLen, userMessage.length(),
-                    ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), numCtxForOllama));
+                    ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), numCtxForBudget));
         }
         if (whatWasSentSummaryText != null && !whatWasSentSummaryText.isDisposed()) {
             whatWasSentSummaryText.setText(summary.toString());
@@ -826,9 +847,9 @@ public class ArchiGPTView extends ViewPart {
         userRequestedCancel = false;
         currentConnectionRef = new AtomicReference<>();
         setRequestInProgress(true);
-        responseText.setText("Connecting to Ollama…");
+        responseText.setText("Connecting to " + ArchiGPTPreferences.providerDisplayName() + "…");
 
-        currentJob = new Job("ArchiGPT – Ollama") {
+        currentJob = new Job("ArchiGPT – " + ArchiGPTPreferences.providerDisplayName()) {
             private void updateStatus(String message) {
                 Display.getDefault().asyncExec(() -> {
                     if (responseWidget != null && !responseWidget.isDisposed()) {
@@ -855,12 +876,13 @@ public class ArchiGPTView extends ViewPart {
                 String raw = null;
                 String toShow = "";
                 try {
-                    OllamaClient client = new OllamaClient();
+                    LLMClient client = LlmClientFactory.createClient();
                     if (!client.checkConnection()) {
-                        finishRequest("Cannot reach Ollama at " + OllamaClient.DEFAULT_BASE_URL + ". Is Ollama running? (e.g. ollama serve)");
+                        finishRequest("Cannot reach LLM at " + client.endpointSummary()
+                                + ". For Ollama run ollama serve; for cloud APIs check Window → Preferences → ArchiGPT (URL, API key, model).");
                         return Status.OK_STATUS;
                     }
-                    updateStatus("Connection OK. Sending request to Ollama. Waiting for response (this may take a minute)…");
+                    updateStatus("Connection OK. Sending request to LLM. Waiting for response (this may take a minute)…");
                     try {
                         if (analysisPlannedChunks != null && !analysisPlannedChunks.isEmpty()) {
                             StringBuilder acc = new StringBuilder();
@@ -871,11 +893,11 @@ public class ArchiGPTView extends ViewPart {
                                 }
                                 ModelContextChunkPlanner.PlannedChunk pc = analysisPlannedChunks.get(i);
                                 String scope = pc.title != null && !pc.title.isEmpty() ? " — " + pc.title : "";
-                                updateStatus("Analysis excerpt " + (i + 1) + "/" + analysisPlannedChunks.size() + scope + " — Ollama…");
+                                updateStatus("Analysis excerpt " + (i + 1) + "/" + analysisPlannedChunks.size() + scope + " — LLM…");
                                 String chunkUser = ChunkAnalysisPrompt.buildChunkUserMessage(analysisModelDigest, pc.title, pc.xml,
                                         i + 1, analysisPlannedChunks.size(), selectionContextFinal, promptFinal);
                                 String part = client.generateWithSystemPrompt(ChunkAnalysisPrompt.SYSTEM_PROMPT, chunkUser,
-                                        currentConnectionRef, numCtxForOllama);
+                                        currentConnectionRef, completionParam);
                                 acc.append("--- Excerpt ").append(i + 1).append("/").append(analysisPlannedChunks.size());
                                 if (pc.title != null && !pc.title.isEmpty()) {
                                     acc.append(" (").append(pc.title).append(")");
@@ -888,10 +910,10 @@ public class ArchiGPTView extends ViewPart {
                             return Status.OK_STATUS;
                         }
                         raw = client.generateWithSystemPrompt(ArchiMateSystemPrompt.SYSTEM_PROMPT, userMessage, currentConnectionRef,
-                                numCtxForOllama);
+                                completionParam);
                     } catch (IOException e) {
                         if (userRequestedCancel || monitor.isCanceled()) {
-                            finishRequest("Cancelled. Ollama request stopped.");
+                            finishRequest("Cancelled. LLM request stopped.");
                             return Status.CANCEL_STATUS;
                         }
                         throw e;
@@ -978,16 +1000,23 @@ public class ArchiGPTView extends ViewPart {
                     }
                 } catch (IOException e) {
                     if (userRequestedCancel || monitor.isCanceled()) {
-                        finishRequest("Cancelled. Ollama request stopped.");
+                        finishRequest("Cancelled. LLM request stopped.");
                         return Status.CANCEL_STATUS;
                     }
                     String err = e.getMessage() != null ? e.getMessage() : "";
-                    toShow = "Error: " + err + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + OllamaClient.DEFAULT_MODEL + ").";
-                    if (err.toLowerCase(Locale.ROOT).contains("timed out")) {
-                        toShow += "\n\nIf Ollama is running, a common cause is an oversized num_ctx (the model’s reported max context can be 128k+ and makes each request very slow). Try -D"
-                                + LlmContextConfig.PROP_OLLAMA_NUM_CTX + "=8192 in Archi.ini (vmargs), or adjust -D"
-                                + LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP + " (default 32768). Raise -D"
-                                + LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS + " only when completions truly need more than two minutes.";
+                    if (ArchiGPTPreferences.isOllama()) {
+                        toShow = "Error: " + err + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + OllamaClient.DEFAULT_MODEL + ").";
+                        if (err.toLowerCase(Locale.ROOT).contains("timed out")) {
+                            toShow += "\n\nIf Ollama is running, a common cause is an oversized num_ctx (the model’s reported max context can be 128k+ and makes each request very slow). Try -D"
+                                    + LlmContextConfig.PROP_OLLAMA_NUM_CTX + "=8192 in Archi.ini (vmargs), or adjust -D"
+                                    + LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP + " (default 32768). Raise -D"
+                                    + LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS + " only when completions truly need more than two minutes.";
+                        }
+                    } else {
+                        toShow = "Error: " + err + "\n\nCheck Window → Preferences → ArchiGPT: API key, HTTPS base URL, and model id. HTTP 401 usually means an invalid API key.";
+                        if (err.toLowerCase(Locale.ROOT).contains("timed out")) {
+                            toShow += "\n\nYou can raise -D" + LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS + " in Archi.ini (vmargs) for longer cloud completions.";
+                        }
                     }
                     if (raw != null) {
                         toShow += "\n\nRaw LLM response:\n" + truncate(raw, 4000);
