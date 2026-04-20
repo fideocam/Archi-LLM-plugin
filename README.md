@@ -7,7 +7,7 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
 ## Installing the plugin
 
 1. **Get the plugin**  
-   Download `ArchiGPT.archiplugin` from the **export** folder in this repo (or from releases, if available).
+   Download `ArchiGPT.archiplugin` from the **`export build/`** folder (Maven output) or from **`export/`** at the repo root when it has been refreshed to match (or from releases, if available). On **`main`**, this artifact is the **local Ollama** build only; optional **cloud** provider support lives on branch **`feature/external-llm`** and is not part of `main`.
 
 2. **Close Archi**  
    Quit Archi completely before installing.
@@ -20,6 +20,13 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
 
 4. **Open the ArchiGPT view**  
    After restart: **ArchiGPT → Show ArchiGPT View** (or **Help → Show ArchiGPT View** / **Tools → ArchiGPT**).
+
+---
+
+## Branches
+
+- **`main`** — Default branch: **Ollama (local LLM)** only, plus the packaged **`ArchiGPT.archiplugin`** for that build.
+- **`feature/external-llm`** — Work-in-progress **external APIs** (OpenAI, Anthropic, Gemini, Azure, etc.). Merge to `main` only when you want cloud support in the default release.
 
 ---
 
