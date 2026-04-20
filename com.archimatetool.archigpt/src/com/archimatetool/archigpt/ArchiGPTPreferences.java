@@ -133,13 +133,23 @@ public final class ArchiGPTPreferences {
     }
 
     public static boolean requiresApiKey() {
-        String p = getProvider();
-        return PROVIDER_OPENAI.equals(p) || PROVIDER_AZURE_OPENAI.equals(p) || PROVIDER_ANTHROPIC.equals(p)
-                || PROVIDER_GOOGLE.equals(p) || PROVIDER_CUSTOM.equals(p);
+        return requiresApiKey(getProvider());
+    }
+
+    public static boolean requiresApiKey(String provider) {
+        if (provider == null) {
+            return false;
+        }
+        return PROVIDER_OPENAI.equals(provider) || PROVIDER_AZURE_OPENAI.equals(provider)
+                || PROVIDER_ANTHROPIC.equals(provider) || PROVIDER_GOOGLE.equals(provider) || PROVIDER_CUSTOM.equals(provider);
     }
 
     public static String providerDisplayName() {
-        switch (getProvider()) {
+        return providerDisplayName(getProvider());
+    }
+
+    public static String providerDisplayName(String provider) {
+        switch (provider != null ? provider : PROVIDER_OLLAMA) {
             case PROVIDER_OPENAI:
                 return "OpenAI";
             case PROVIDER_AZURE_OPENAI:
@@ -155,4 +165,5 @@ public final class ArchiGPTPreferences {
                 return "Ollama (local)";
         }
     }
+
 }

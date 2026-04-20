@@ -14,7 +14,7 @@
   <artifactId>archigpt-tests</artifactId>
   <packaging>jar</packaging>
   <name>ArchiGPT Tests</name>
-  <description>Unit tests for ArchiGPT plugin (Ollama client, parser, validator)</description>
+  <description>Unit tests for ArchiGPT plugin (Ollama, external LLM clients, parser, validator)</description>
 
   <dependencies>
     <dependency>

@@ -9,23 +9,34 @@ public final class LlmClientFactory {
     private LlmClientFactory() {}
 
     public static LLMClient createClient() {
-        String p = ArchiGPTPreferences.getProvider();
-        String base = ArchiGPTPreferences.getBaseUrl();
-        String model = ArchiGPTPreferences.getModel();
-        String key = ArchiGPTPreferences.getApiKey();
+        return createClientForTesting(
+                ArchiGPTPreferences.getProvider(),
+                ArchiGPTPreferences.getBaseUrl(),
+                ArchiGPTPreferences.getModel(),
+                ArchiGPTPreferences.getApiKey());
+    }
+
+    /**
+     * Same client wiring as {@link #createClient()} but with explicit parameters (for unit tests; same package).
+     */
+    static LLMClient createClientForTesting(String provider, String baseUrl, String model, String apiKey) {
+        String p = provider != null ? provider : ArchiGPTPreferences.PROVIDER_OLLAMA;
+        String base = baseUrl != null ? baseUrl : "";
+        String m = model != null ? model : "";
+        String key = apiKey != null ? apiKey : "";
         switch (p) {
             case ArchiGPTPreferences.PROVIDER_OPENAI:
             case ArchiGPTPreferences.PROVIDER_CUSTOM:
-                return new OpenAICompatibleClient(base, model, key, false);
+                return new OpenAICompatibleClient(base, m, key, false);
             case ArchiGPTPreferences.PROVIDER_AZURE_OPENAI:
-                return new OpenAICompatibleClient(base, model, key, true);
+                return new OpenAICompatibleClient(base, m, key, true);
             case ArchiGPTPreferences.PROVIDER_ANTHROPIC:
-                return new AnthropicMessagesClient(base, model, key);
+                return new AnthropicMessagesClient(base, m, key);
             case ArchiGPTPreferences.PROVIDER_GOOGLE:
-                return new GeminiClient(base, model, key);
+                return new GeminiClient(base, m, key);
             case ArchiGPTPreferences.PROVIDER_OLLAMA:
             default:
-                return new OllamaClient(base, model);
+                return new OllamaClient(base, m);
         }
     }
 
@@ -33,23 +44,35 @@ public final class LlmClientFactory {
      * @throws IllegalArgumentException if required fields are missing for the selected provider
      */
     public static void validateConfiguration() {
-        String p = ArchiGPTPreferences.getProvider();
-        String base = ArchiGPTPreferences.getBaseUrl();
-        String model = ArchiGPTPreferences.getModel();
+        validateInputs(
+                ArchiGPTPreferences.getProvider(),
+                ArchiGPTPreferences.getBaseUrl(),
+                ArchiGPTPreferences.getModel(),
+                ArchiGPTPreferences.getApiKey());
+    }
+
+    /**
+     * Same rules as {@link #validateConfiguration()} using explicit values (for unit tests).
+     */
+    static void validateInputs(String provider, String baseUrl, String model, String apiKey) {
+        String p = provider != null ? provider : ArchiGPTPreferences.PROVIDER_OLLAMA;
+        String base = baseUrl != null ? baseUrl : "";
+        String m = model != null ? model : "";
+        String key = apiKey != null ? apiKey : "";
         if (!ArchiGPTPreferences.PROVIDER_OLLAMA.equals(p)) {
-            if (base == null || base.trim().isEmpty()) {
-                throw new IllegalArgumentException("Base URL is required for " + ArchiGPTPreferences.providerDisplayName() + ".");
+            if (base.trim().isEmpty()) {
+                throw new IllegalArgumentException("Base URL is required for " + ArchiGPTPreferences.providerDisplayName(p) + ".");
             }
             String bt = base.trim().toLowerCase();
             if (!bt.startsWith("https://") && !isLocalhostHttp(bt)) {
                 throw new IllegalArgumentException("External LLM base URL must use https:// (or http://localhost for development).");
             }
-            if (ArchiGPTPreferences.requiresApiKey() && (ArchiGPTPreferences.getApiKey() == null || ArchiGPTPreferences.getApiKey().trim().isEmpty())) {
-                throw new IllegalArgumentException("API key is required for " + ArchiGPTPreferences.providerDisplayName()
+            if (ArchiGPTPreferences.requiresApiKey(p) && key.trim().isEmpty()) {
+                throw new IllegalArgumentException("API key is required for " + ArchiGPTPreferences.providerDisplayName(p)
                         + ". Set it in Window → Preferences → ArchiGPT.");
             }
         }
-        if (model == null || model.trim().isEmpty()) {
+        if (m.trim().isEmpty()) {
             throw new IllegalArgumentException("Model name is required. Set it in Window → Preferences → ArchiGPT.");
         }
         if (ArchiGPTPreferences.PROVIDER_AZURE_OPENAI.equals(p)) {
