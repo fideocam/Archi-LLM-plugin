@@ -151,7 +151,18 @@ public class OllamaIntegrationTest {
         if (xmlStart == -1) xmlStart = s.indexOf("<model");
         if (xmlStart >= 0) s = s.substring(xmlStart).trim();
         else s = "";
+        // LLMs often append prose or a second code block after </model>, which breaks SAX ("trailing section").
+        s = truncateThroughFirstClosingModel(s);
         return s;
+    }
+
+    /** Keep only through the first closing </model> so trailing commentary is not parsed. */
+    private static String truncateThroughFirstClosingModel(String xml) {
+        if (xml == null || xml.isEmpty()) return xml;
+        String lower = xml.toLowerCase();
+        int end = lower.indexOf("</model>");
+        if (end < 0) return xml;
+        return xml.substring(0, end + "</model>".length());
     }
 
     /** Unescape common escapes so we can find <?xml or <model (LLM may return \\u003c or &lt;). */
