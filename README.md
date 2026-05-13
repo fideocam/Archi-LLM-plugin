@@ -76,7 +76,7 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
 
 ## Building from source
 
-If you want to build the plugin yourself (Maven, Eclipse, or Ant), see **[docs/build.md](docs/build.md)**.
+If you want to build the plugin yourself (Maven, Eclipse, or Ant), see **[docs/build.md](docs/build.md)**. With a sibling clone at `../archi` and its product built, run **`scripts/mvn-with-archi.sh clean package`** from the repo root.
 
 ---
 

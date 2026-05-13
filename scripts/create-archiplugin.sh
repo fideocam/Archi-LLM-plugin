@@ -8,7 +8,8 @@ JAR="$ROOT/com.archimatetool.archigpt/target/com.archimatetool.archigpt-1.0.0-SN
 OUT="$ROOT/export build/ArchiGPT.archiplugin"
 
 if [ ! -f "$JAR" ]; then
-  echo "Plugin JAR not found. Build it first: mvn package -pl com.archimatetool.archigpt -P with-archi -Darchi.repo.path=..."
+  echo "Plugin JAR not found. Build from repo root, for example:"
+  echo "  scripts/mvn-with-archi.sh clean package -DskipTests"
   exit 1
 fi
 

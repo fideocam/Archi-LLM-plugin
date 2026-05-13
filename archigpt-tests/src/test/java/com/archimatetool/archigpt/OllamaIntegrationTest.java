@@ -44,12 +44,17 @@ public class OllamaIntegrationTest {
 
     @Before
     public void assumeOllamaReachable() {
+        String flag = System.getenv("OLLAMA_INTEGRATION");
+        boolean enabled = flag != null && ("1".equals(flag.trim()) || "true".equalsIgnoreCase(flag.trim()));
+        org.junit.Assume.assumeTrue(
+                "Ollama integration tests skipped. Set OLLAMA_INTEGRATION=1 with Ollama running to enable.",
+                enabled);
         if (!ollamaAvailable) {
             OllamaClient client = new OllamaClient();
             ollamaAvailable = client.checkConnection();
         }
         org.junit.Assume.assumeTrue(
-                "Ollama not reachable at " + OllamaClient.DEFAULT_BASE_URL + ". Start Ollama (e.g. ollama serve) to run integration tests.",
+                "Ollama not reachable at " + OllamaClient.DEFAULT_BASE_URL + ". Start Ollama (e.g. ollama serve).",
                 ollamaAvailable);
     }
 

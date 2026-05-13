@@ -29,7 +29,11 @@ You need a p2 repository that contains Archi’s `com.archimatetool.editor` bund
    ```
    Example if `archi` is next to the plugin repo: `cd ../archi`. Example if you’re in the plugin repo and archi is in `archi/`: `cd archi`.
 
-2. From this repository root, build ArchiGPT:
+2. From this repository root, build ArchiGPT (wrapper sets `-P with-archi`, JAXP limits, and `archi.repo.path` for a sibling `../archi` clone):
+   ```bash
+   scripts/mvn-with-archi.sh clean package
+   ```
+   Or equivalently:
    ```bash
    mvn clean package -P with-archi
    ```
@@ -47,13 +51,17 @@ You need a p2 repository that contains Archi’s `com.archimatetool.editor` bund
 
    **Run tests:** (requires Archi p2 repo as above; tests that need Archi classes are skipped if not on classpath)
    ```bash
+   scripts/mvn-with-archi.sh clean test
+   ```
+   Or:
+   ```bash
    export MAVEN_OPTS="-Djdk.xml.maxGeneralEntitySizeLimit=2147483647 -Djdk.xml.totalEntitySizeLimit=2147483647"
    mvn clean test -P with-archi
    ```
 
-   **Archi model on test classpath (run import/validator tests):** Tests such as `ArchiMateImportFlowTest`, `ArchiMateSchemaValidatorTest`, and `ModelContextToXmlTest` only run when the Archi model classes (e.g. `IArchimateFactory`) are on the classpath. When you use **-P with-archi**, the parent POM sets `archi.on.classpath=true`, which activates the **with-archi-model** profile in `archigpt-tests` and adds the Archi model JAR from your local Archi build to the test classpath. Default path (from `archigpt-tests` module) is `../../archi/com.archimatetool.model/target/com.archimatetool.model-5.8.0-SNAPSHOT.jar` (i.e. `archi` is a sibling of the plugin repo directory). If your layout differs, override the path:
+   **Archi model on test classpath (run import/validator tests):** Tests such as `ArchiMateImportFlowTest`, `ArchiMateSchemaValidatorTest`, and `ModelContextToXmlTest` only run when the Archi model classes (e.g. `IArchimateFactory`) are on the classpath. When you use **-P with-archi**, the parent POM sets `archi.on.classpath=true`, which activates the **with-archi-model** profile in `archigpt-tests` and adds the Archi model JAR from your local Archi build to the test classpath. The default path uses the parent property `archi.version` (must match Archi’s `${revision}`, e.g. `5.9.0-SNAPSHOT`) under `../archi/com.archimatetool.model/target/`. If your layout differs, override the path:
    ```bash
-   mvn test -pl archigpt-tests -P with-archi -Darchi.model.jar.path=/full/path/to/com.archimatetool.model-5.8.0-SNAPSHOT.jar
+   mvn test -pl archigpt-tests -P with-archi -Darchi.model.jar.path=/full/path/to/com.archimatetool.model-5.9.0-SNAPSHOT.jar
    ```
    If those tests are still skipped, the Archi model JAR may have runtime dependencies (e.g. EMF) that are not on the classpath; in that case they only run in an environment where the full Archi/OSGi classpath is available (e.g. Tycho test runtime or Eclipse).
 

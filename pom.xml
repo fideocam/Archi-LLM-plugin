@@ -21,8 +21,10 @@
     <tycho.version>4.0.8</tycho.version>
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
-    <!-- Path to Archi p2 repo (only used with -P with-archi). Default: ../archi/... when archi is next to this repo. If archi is one level up (sibling of this repo folder), use -Darchi.repo.path=/full/path/to/archi/.../repository -->
-    <archi.repo.path>${project.basedir}/../archi/com.archimatetool.editor.product/target/repository</archi.repo.path>
+    <!-- Path to Archi p2 repo (only used with -P with-archi). Default: sibling ../archi (see scripts/mvn-with-archi.sh). -->
+    <archi.repo.path>${maven.multiModuleProjectDirectory}/../archi/com.archimatetool.editor.product/target/repository</archi.repo.path>
+    <!-- Version line for sibling ../archi build; must match Archi's ${revision} for with-archi-model tests. -->
+    <archi.version>5.9.0-SNAPSHOT</archi.version>
   </properties>
 
   <repositories>
