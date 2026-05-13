@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,6 +33,7 @@ import org.eclipse.swt.custom.CTabItem;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.FileDialog;
@@ -39,9 +41,13 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IMemento;
 import org.eclipse.ui.ISelectionListener;
+import org.eclipse.ui.IViewSite;
 import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchWindow;
+import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.part.ViewPart;
 
 import com.archimatetool.editor.model.IEditorModelManager;
@@ -54,7 +60,6 @@ import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IDiagramModelConnection;
 import com.archimatetool.model.IFolder;
 
-import org.eclipse.ui.IEditorPart;
 import org.osgi.framework.FrameworkUtil;
 
 /**
@@ -65,6 +70,8 @@ public class ArchiGPTView extends ViewPart {
 
     public static final String ID = "com.archimatetool.archigpt.view";
 
+    private static final String MEMENTO_OLLAMA_MODEL = "ollamaModel";
+
     /** Max characters of combined per-chunk user messages shown in the Debug XML preview when analysis is chunked. */
     private static final int MAX_CHUNKED_DEBUG_PREVIEW_CHARS = 250_000;
 
@@ -74,6 +81,9 @@ public class ArchiGPTView extends ViewPart {
     private Text responseText;
     private Button sendButton;
     private Button saveAsButton;
+    private Combo ollamaModelCombo;
+    private Button refreshOllamaModelsButton;
+    private String persistedOllamaModel;
     private Label buildLabel;
     private Label whatWasSentLabel;
     private Label xmlPreviewLabel;
@@ -85,6 +95,24 @@ public class ArchiGPTView extends ViewPart {
     private volatile AtomicReference<HttpURLConnection> currentConnectionRef;
     /** Set when user clicks Stop so the job can treat IOException as cancel even before monitor is updated. */
     private volatile boolean userRequestedCancel;
+
+    @Override
+    public void init(IViewSite site, IMemento memento) throws PartInitException {
+        super.init(site, memento);
+        if (memento != null) {
+            persistedOllamaModel = memento.getString(MEMENTO_OLLAMA_MODEL);
+        }
+    }
+
+    @Override
+    public void saveState(IMemento memento) {
+        if (ollamaModelCombo != null && !ollamaModelCombo.isDisposed()) {
+            String t = ollamaModelCombo.getText();
+            if (t != null && !t.trim().isEmpty()) {
+                memento.putString(MEMENTO_OLLAMA_MODEL, t.trim());
+            }
+        }
+    }
 
     @Override
     public void createPartControl(Composite parent) {
@@ -106,6 +134,48 @@ public class ArchiGPTView extends ViewPart {
         mainLayout.marginHeight = 10;
         mainLayout.verticalSpacing = 8;
         mainComposite.setLayout(mainLayout);
+
+        Composite modelRow = new Composite(mainComposite, SWT.NONE);
+        modelRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout modelRowLayout = new GridLayout(3, false);
+        modelRowLayout.marginWidth = 0;
+        modelRowLayout.marginHeight = 0;
+        modelRowLayout.horizontalSpacing = 8;
+        modelRow.setLayout(modelRowLayout);
+
+        Label modelLabel = new Label(modelRow, SWT.NONE);
+        modelLabel.setText("Ollama model:");
+        modelLabel.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+
+        ollamaModelCombo = new Combo(modelRow, SWT.DROP_DOWN);
+        GridData comboData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        ollamaModelCombo.setLayoutData(comboData);
+        String initialModel = persistedOllamaModel != null && !persistedOllamaModel.trim().isEmpty()
+                ? persistedOllamaModel.trim()
+                : OllamaClient.DEFAULT_MODEL;
+        if (LlmContextConfig.hasExplicitOllamaModel()) {
+            initialModel = System.getProperty(LlmContextConfig.PROP_OLLAMA_MODEL).trim();
+        }
+        ollamaModelCombo.setItems(new String[] { initialModel });
+        ollamaModelCombo.setText(initialModel);
+        if (LlmContextConfig.hasExplicitOllamaModel()) {
+            ollamaModelCombo.setEnabled(false);
+            ollamaModelCombo.setToolTipText("Model is fixed by -D" + LlmContextConfig.PROP_OLLAMA_MODEL + "="
+                    + System.getProperty(LlmContextConfig.PROP_OLLAMA_MODEL).trim());
+        }
+
+        refreshOllamaModelsButton = new Button(modelRow, SWT.PUSH);
+        refreshOllamaModelsButton.setText("Refresh list");
+        refreshOllamaModelsButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        refreshOllamaModelsButton.setEnabled(!LlmContextConfig.hasExplicitOllamaModel());
+        refreshOllamaModelsButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                scheduleRefreshOllamaModelList(false);
+            }
+        });
+
+        scheduleRefreshOllamaModelList(true);
 
         Label promptLabel = new Label(mainComposite, SWT.NONE);
         promptLabel.setText("Prompt:");
@@ -215,6 +285,77 @@ public class ArchiGPTView extends ViewPart {
             }
         };
         getViewSite().getPage().addSelectionListener(selectionListener);
+    }
+
+    /**
+     * Fetches installed Ollama model tags from {@code /api/tags} and fills the combo. When {@code silent} is true,
+     * connection errors are ignored (used on view startup).
+     */
+    private void scheduleRefreshOllamaModelList(final boolean silent) {
+        if (LlmContextConfig.hasExplicitOllamaModel()) {
+            return;
+        }
+        Job job = new Job("ArchiGPT – Ollama models") {
+            @Override
+            protected IStatus run(IProgressMonitor monitor) {
+                try {
+                    List<String> names = new OllamaClient().fetchInstalledModelNames();
+                    Display.getDefault().asyncExec(() -> {
+                        if (ollamaModelCombo == null || ollamaModelCombo.isDisposed()) {
+                            return;
+                        }
+                        String keep = ollamaModelCombo.getText();
+                        if (keep == null) {
+                            keep = "";
+                        }
+                        keep = keep.trim();
+                        LinkedHashSet<String> merged = new LinkedHashSet<>();
+                        for (String n : names) {
+                            if (n != null && !n.trim().isEmpty()) {
+                                merged.add(n.trim());
+                            }
+                        }
+                        if (!keep.isEmpty()) {
+                            merged.add(keep);
+                        }
+                        if (merged.isEmpty()) {
+                            merged.add(OllamaClient.DEFAULT_MODEL);
+                        }
+                        List<String> items = new ArrayList<>(merged);
+                        Collections.sort(items, String.CASE_INSENSITIVE_ORDER);
+                        ollamaModelCombo.setItems(items.toArray(new String[0]));
+                        int idx = items.indexOf(keep);
+                        if (idx >= 0) {
+                            ollamaModelCombo.select(idx);
+                        } else if (!keep.isEmpty()) {
+                            ollamaModelCombo.setText(keep);
+                        } else if (!items.isEmpty()) {
+                            ollamaModelCombo.select(0);
+                        }
+                    });
+                } catch (IOException e) {
+                    if (!silent) {
+                        Display.getDefault().asyncExec(() -> {
+                            if (ollamaModelCombo == null || ollamaModelCombo.isDisposed()) {
+                                return;
+                            }
+                            org.eclipse.swt.widgets.Shell sh = getViewSite() != null ? getViewSite().getShell() : null;
+                            if (sh != null && !sh.isDisposed()) {
+                                org.eclipse.swt.widgets.MessageBox box = new org.eclipse.swt.widgets.MessageBox(sh,
+                                        SWT.ICON_INFORMATION | SWT.OK);
+                                box.setText("Ollama models");
+                                box.setMessage("Could not list models: " + (e.getMessage() != null ? e.getMessage() : e.toString())
+                                        + "\n\nEnsure Ollama is running. You can still type a model name in the field.");
+                                box.open();
+                            }
+                        });
+                    }
+                }
+                return Status.OK_STATUS;
+            }
+        };
+        job.setSystem(true);
+        job.schedule();
     }
 
     @Override
@@ -635,11 +776,13 @@ public class ArchiGPTView extends ViewPart {
         }
         final String selectionContextFinal = selectionContext;
         final String promptFinal = prompt;
+        final String ollamaModelResolved = LlmContextConfig.resolveOllamaModel(
+                ollamaModelCombo != null && !ollamaModelCombo.isDisposed() ? ollamaModelCombo.getText() : "");
 
         // Discover Ollama context (POST /api/show) unless -Darchigpt.ollamaNumCtx is set; size XML to leave reply headroom
         int reportedOllamaCtx = 0;
         try {
-            reportedOllamaCtx = new OllamaClient().fetchReportedContextTokens();
+            reportedOllamaCtx = new OllamaClient(OllamaClient.DEFAULT_BASE_URL, ollamaModelResolved).fetchReportedContextTokens();
         } catch (IOException ignored) {
         }
         final int numCtxForOllama = LlmContextConfig.resolveOllamaNumCtx(reportedOllamaCtx);
@@ -735,7 +878,11 @@ public class ArchiGPTView extends ViewPart {
         }
         summary.append("Prompt: ").append(promptFinal).append("\n\n");
         summary.append("Selection context: ").append(selectionContextFinal != null && !selectionContextFinal.isEmpty() ? selectionContextFinal.trim() : "(none)").append("\n\n");
-        summary.append("Ollama: ");
+        summary.append("Ollama model: ").append(ollamaModelResolved);
+        if (LlmContextConfig.hasExplicitOllamaModel()) {
+            summary.append(" (from -D").append(LlmContextConfig.PROP_OLLAMA_MODEL).append("; overrides the view field)");
+        }
+        summary.append("\n\nOllama: ");
         if (LlmContextConfig.hasExplicitOllamaNumCtx()) {
             summary.append("num_ctx=").append(numCtxForOllama).append(" (manual -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(")");
         } else if (reportedOllamaCtx > 0) {
@@ -855,7 +1002,7 @@ public class ArchiGPTView extends ViewPart {
                 String raw = null;
                 String toShow = "";
                 try {
-                    OllamaClient client = new OllamaClient();
+                    OllamaClient client = new OllamaClient(OllamaClient.DEFAULT_BASE_URL, ollamaModelResolved);
                     if (!client.checkConnection()) {
                         finishRequest("Cannot reach Ollama at " + OllamaClient.DEFAULT_BASE_URL + ". Is Ollama running? (e.g. ollama serve)");
                         return Status.OK_STATUS;
@@ -982,7 +1129,7 @@ public class ArchiGPTView extends ViewPart {
                         return Status.CANCEL_STATUS;
                     }
                     String err = e.getMessage() != null ? e.getMessage() : "";
-                    toShow = "Error: " + err + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + OllamaClient.DEFAULT_MODEL + ").";
+                    toShow = "Error: " + err + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + ollamaModelResolved + ").";
                     if (err.toLowerCase(Locale.ROOT).contains("timed out")) {
                         toShow += "\n\nIf Ollama is running, a common cause is an oversized num_ctx (the model’s reported max context can be 128k+ and makes each request very slow). Try -D"
                                 + LlmContextConfig.PROP_OLLAMA_NUM_CTX + "=8192 in Archi.ini (vmargs), or adjust -D"

@@ -11,6 +11,9 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -63,6 +66,31 @@ public class OllamaClient {
                 return 0;
             }
             return OllamaShowResponseParser.parseContextTokens(resp);
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    /**
+     * Lists model names returned by {@code GET /api/tags} (sorted case-insensitively).
+     *
+     * @throws IOException if the HTTP status is not successful or the connection fails
+     */
+    public List<String> fetchInstalledModelNames() throws IOException {
+        URL url = new URL(baseUrl + "/api/tags");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(5000);
+        conn.setReadTimeout(10000);
+        try {
+            int code = conn.getResponseCode();
+            String body = readFully(code >= 400 ? conn.getErrorStream() : conn.getInputStream());
+            if (code >= 400) {
+                throw new IOException("Ollama returned " + code + (body != null && !body.isEmpty() ? ": " + body : ""));
+            }
+            List<String> names = new ArrayList<>(OllamaTagsResponseParser.parseModelNames(body != null ? body : ""));
+            Collections.sort(names, String.CASE_INSENSITIVE_ORDER);
+            return names;
         } finally {
             conn.disconnect();
         }

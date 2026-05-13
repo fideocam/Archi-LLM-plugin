@@ -12,6 +12,7 @@ package com.archimatetool.archigpt;
  *   <li>{@value #PROP_CHUNKED_ANALYSIS} — set {@code false} to disable multi-request plain-text analysis for huge models.</li>
  *   <li>{@value #PROP_SEMANTIC_CHUNKED_ANALYSIS} — set {@code false} to use plain string-split chunks instead of folder/view-based chunks.</li>
  *   <li>{@value #PROP_OLLAMA_READ_TIMEOUT_MS} — max milliseconds to wait for Ollama to finish one chat/generate response (default {@value #DEFAULT_OLLAMA_READ_TIMEOUT_MS}). Use {@code 0} for no read timeout. If you see {@code Read timed out}, try lowering {@value #PROP_OLLAMA_REPORTED_CTX_CAP} or setting an explicit {@value #PROP_OLLAMA_NUM_CTX} before raising the timeout.</li>
+ *   <li>{@value #PROP_OLLAMA_MODEL} — Ollama model name (optional). When set, overrides the model chosen in the ArchiGPT view dropdown.</li>
  * </ul>
  */
 @SuppressWarnings("nls")
@@ -40,6 +41,9 @@ public final class LlmContextConfig {
      * {@code 0} means unlimited (Java {@link java.net.HttpURLConnection} behaviour).
      */
     public static final String PROP_OLLAMA_READ_TIMEOUT_MS = "archigpt.ollamaReadTimeoutMs";
+
+    /** Property: Ollama model tag (e.g. {@code llama3.2:latest}). When set, overrides the ArchiGPT view model dropdown. */
+    public static final String PROP_OLLAMA_MODEL = "archigpt.ollamaModel";
 
     /** Default read timeout for one completion (2 minutes). Prefer fixing oversized {@code num_ctx} before raising this. */
     public static final int DEFAULT_OLLAMA_READ_TIMEOUT_MS = 120_000;
@@ -118,6 +122,26 @@ public final class LlmContextConfig {
 
     public static boolean hasExplicitOllamaReadTimeout() {
         String raw = System.getProperty(PROP_OLLAMA_READ_TIMEOUT_MS);
+        return raw != null && !raw.trim().isEmpty();
+    }
+
+    /**
+     * Resolved Ollama model: JVM {@link #PROP_OLLAMA_MODEL} wins; otherwise {@code uiModelName} if non-blank;
+     * otherwise {@link OllamaClient#DEFAULT_MODEL}.
+     */
+    public static String resolveOllamaModel(String uiModelName) {
+        String p = System.getProperty(PROP_OLLAMA_MODEL);
+        if (p != null && !p.trim().isEmpty()) {
+            return p.trim();
+        }
+        if (uiModelName != null && !uiModelName.trim().isEmpty()) {
+            return uiModelName.trim();
+        }
+        return OllamaClient.DEFAULT_MODEL;
+    }
+
+    public static boolean hasExplicitOllamaModel() {
+        String raw = System.getProperty(PROP_OLLAMA_MODEL);
         return raw != null && !raw.trim().isEmpty();
     }
 

@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.List;
 
 import org.junit.After;
 import org.junit.Before;
@@ -55,6 +57,15 @@ public class OllamaClientTest {
 
     private String baseUrl() {
         return "http://localhost:" + server.getAddress().getPort();
+    }
+
+    @Test
+    public void fetchInstalledModelNames_callsTagsApiAndSorts() throws IOException {
+        responseBody = "{\"models\":[{\"name\":\"z:one\"},{\"name\":\"a:two\"}]}";
+        OllamaClient client = new OllamaClient(baseUrl(), "any");
+        List<String> names = client.fetchInstalledModelNames();
+        assertEquals(Arrays.asList("a:two", "z:one"), names);
+        assertEquals("/api/tags", lastRequestPath);
     }
 
     @Test

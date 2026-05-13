@@ -17,6 +17,24 @@ public class LlmContextConfigTest {
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_NUM_CTX);
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS);
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP);
+        System.clearProperty(LlmContextConfig.PROP_OLLAMA_MODEL);
+    }
+
+    @Test
+    public void resolveOllamaModel_uiWinsWhenNoProperty() {
+        assertEquals("mistral:latest", LlmContextConfig.resolveOllamaModel("mistral:latest"));
+    }
+
+    @Test
+    public void resolveOllamaModel_propertyOverridesUi() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_MODEL, "phi3:mini");
+        assertEquals("phi3:mini", LlmContextConfig.resolveOllamaModel("llama3.2"));
+        assertTrue(LlmContextConfig.hasExplicitOllamaModel());
+    }
+
+    @Test
+    public void resolveOllamaModel_blankUiFallsBackToDefault() {
+        assertEquals(OllamaClient.DEFAULT_MODEL, LlmContextConfig.resolveOllamaModel("  "));
     }
 
     @Test
