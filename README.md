@@ -33,7 +33,9 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
 ## Prerequisites
 
 - **Archi** — [Download Archi](https://www.archimatetool.com/download/) if you don’t have it.
-- **Ollama** — The plugin talks to [Ollama](https://ollama.com) on your machine. Install Ollama and start it (e.g. run `ollama serve` or use the Ollama app). The plugin uses `http://localhost:11434` and the default model `llama3.2` unless you change settings.
+- **Ollama** — The plugin talks to [Ollama](https://ollama.com). Install Ollama and start it (e.g. run `ollama serve` or use the Ollama app). By default the plugin uses `http://localhost:11434` and model `llama3.2`.
+
+  To use Ollama on **another machine on the LAN**, set the server URL in the ArchiGPT view (**Ollama server**) or in **ArchiGPT → ArchiGPT Preferences…** (also **Window → Preferences → ArchiGPT**), for example `http://192.168.1.10:11434` or just `192.168.1.10`. That host must listen on the network (e.g. `OLLAMA_HOST=0.0.0.0`). You can also set `-Darchigpt.ollamaBaseUrl=http://192.168.1.10:11434` in Archi.ini (`vmargs`).
 
 ---
 
@@ -46,6 +48,7 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
   - *"What business processes use this application?"*
   - *"Remove this element from the diagram"*
 - **Send** — Press **Enter** (or click **Ask ArchiGPT**). Use **Shift+Enter** for a new line. Click **Stop ArchiGPT** to cancel a request.
+- **Ollama server** — The view shows the Ollama URL (default `http://localhost:11434`). Change it to a LAN address and click **Settings…** (or **ArchiGPT → ArchiGPT Preferences…**) to test the connection. Then use **Refresh list** to load models from that server.
 - **Result** — The LLM reply appears in the response area. If you asked to add or change the model, the plugin applies the changes and reports what was added or removed.
 
 **Selection matters:** If you select a folder, a diagram, or an element in Archi before asking, the plugin sends that context to the LLM (e.g. “add to this diagram”, “remove this element”).

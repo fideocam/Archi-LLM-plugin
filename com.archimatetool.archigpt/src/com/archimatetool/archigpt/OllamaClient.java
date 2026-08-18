@@ -1,5 +1,5 @@
 /**
- * Client for local Ollama API. Sends prompts to http://localhost:11434/api/generate.
+ * Client for the Ollama API (local or on the LAN). Default endpoint is {@value #DEFAULT_BASE_URL}.
  */
 package com.archimatetool.archigpt;
 
@@ -18,12 +18,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
- * Connects to a locally running Ollama instance and requests a completion for the given prompt.
+ * Connects to an Ollama instance (this machine or another host on the network) and requests a completion.
  */
 @SuppressWarnings("nls")
 public class OllamaClient {
 
-    public static final String DEFAULT_BASE_URL = "http://localhost:11434";
+    public static final int DEFAULT_PORT = 11434;
+    public static final String DEFAULT_BASE_URL = "http://localhost:" + DEFAULT_PORT;
     public static final String DEFAULT_MODEL = "llama3.2";
 
     private final String baseUrl;

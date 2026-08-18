@@ -18,6 +18,7 @@ public class LlmContextConfigTest {
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS);
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP);
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_MODEL);
+        System.clearProperty(LlmContextConfig.PROP_OLLAMA_BASE_URL);
     }
 
     @Test
@@ -35,6 +36,54 @@ public class LlmContextConfigTest {
     @Test
     public void resolveOllamaModel_blankUiFallsBackToDefault() {
         assertEquals(OllamaClient.DEFAULT_MODEL, LlmContextConfig.resolveOllamaModel("  "));
+    }
+
+    @Test
+    public void resolveOllamaBaseUrl_blankFallsBackToDefault() {
+        assertEquals(OllamaClient.DEFAULT_BASE_URL, LlmContextConfig.resolveOllamaBaseUrl("  "));
+        assertEquals(OllamaClient.DEFAULT_BASE_URL, LlmContextConfig.resolveOllamaBaseUrl(null));
+    }
+
+    @Test
+    public void resolveOllamaBaseUrl_propertyOverridesStored() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_BASE_URL, "http://10.0.0.5:11434");
+        assertEquals("http://10.0.0.5:11434", LlmContextConfig.resolveOllamaBaseUrl("http://localhost:11434"));
+        assertTrue(LlmContextConfig.hasExplicitOllamaBaseUrl());
+    }
+
+    @Test
+    public void normalizeOllamaBaseUrl_bareIpGetsHttpAndDefaultPort() {
+        assertEquals("http://192.168.1.10:11434", LlmContextConfig.normalizeOllamaBaseUrl("192.168.1.10"));
+    }
+
+    @Test
+    public void normalizeOllamaBaseUrl_hostAndPortWithoutScheme() {
+        assertEquals("http://192.168.1.10:11434", LlmContextConfig.normalizeOllamaBaseUrl("192.168.1.10:11434"));
+    }
+
+    @Test
+    public void normalizeOllamaBaseUrl_httpWithoutPortGetsDefaultPort() {
+        assertEquals("http://gpu-box:11434", LlmContextConfig.normalizeOllamaBaseUrl("http://gpu-box"));
+    }
+
+    @Test
+    public void normalizeOllamaBaseUrl_httpsWithoutPortLeftAlone() {
+        assertEquals("https://ollama.example.com", LlmContextConfig.normalizeOllamaBaseUrl("https://ollama.example.com"));
+    }
+
+    @Test
+    public void normalizeOllamaBaseUrl_stripsTrailingSlash() {
+        assertEquals("http://192.168.1.10:11434", LlmContextConfig.normalizeOllamaBaseUrl("http://192.168.1.10:11434/"));
+    }
+
+    @Test
+    public void normalizeOllamaBaseUrl_keepsExplicitPort() {
+        assertEquals("http://192.168.1.10:12345", LlmContextConfig.normalizeOllamaBaseUrl("http://192.168.1.10:12345"));
+    }
+
+    @Test
+    public void normalizeOllamaBaseUrl_ipv6KeepsBrackets() {
+        assertEquals("http://[::1]:11434", LlmContextConfig.normalizeOllamaBaseUrl("http://[::1]:11434"));
     }
 
     @Test

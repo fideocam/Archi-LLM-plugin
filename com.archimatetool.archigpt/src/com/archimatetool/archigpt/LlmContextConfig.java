@@ -4,6 +4,9 @@
  */
 package com.archimatetool.archigpt;
 
+import java.net.MalformedURLException;
+import java.net.URL;
+
 /**
  * JVM system properties (e.g. in Archi.ini <code>-vmargs</code>):
  * <ul>
@@ -13,6 +16,7 @@ package com.archimatetool.archigpt;
  *   <li>{@value #PROP_SEMANTIC_CHUNKED_ANALYSIS} — set {@code false} to use plain string-split chunks instead of folder/view-based chunks.</li>
  *   <li>{@value #PROP_OLLAMA_READ_TIMEOUT_MS} — max milliseconds to wait for Ollama to finish one chat/generate response (default {@value #DEFAULT_OLLAMA_READ_TIMEOUT_MS}). Use {@code 0} for no read timeout. If you see {@code Read timed out}, try lowering {@value #PROP_OLLAMA_REPORTED_CTX_CAP} or setting an explicit {@value #PROP_OLLAMA_NUM_CTX} before raising the timeout.</li>
  *   <li>{@value #PROP_OLLAMA_MODEL} — Ollama model name (optional). When set, overrides the model chosen in the ArchiGPT view dropdown.</li>
+ *   <li>{@value #PROP_OLLAMA_BASE_URL} — Ollama API base URL (optional). When set, overrides the server URL in the ArchiGPT view and preferences (e.g. {@code http://192.168.1.10:11434}).</li>
  * </ul>
  */
 @SuppressWarnings("nls")
@@ -44,6 +48,12 @@ public final class LlmContextConfig {
 
     /** Property: Ollama model tag (e.g. {@code llama3.2:latest}). When set, overrides the ArchiGPT view model dropdown. */
     public static final String PROP_OLLAMA_MODEL = "archigpt.ollamaModel";
+
+    /**
+     * Property: Ollama API base URL (e.g. {@code http://192.168.1.10:11434}). When set, overrides the ArchiGPT view
+     * and preference store.
+     */
+    public static final String PROP_OLLAMA_BASE_URL = "archigpt.ollamaBaseUrl";
 
     /** Default read timeout for one completion (2 minutes). Prefer fixing oversized {@code num_ctx} before raising this. */
     public static final int DEFAULT_OLLAMA_READ_TIMEOUT_MS = 120_000;
@@ -143,6 +153,76 @@ public final class LlmContextConfig {
     public static boolean hasExplicitOllamaModel() {
         String raw = System.getProperty(PROP_OLLAMA_MODEL);
         return raw != null && !raw.trim().isEmpty();
+    }
+
+    public static boolean hasExplicitOllamaBaseUrl() {
+        String raw = System.getProperty(PROP_OLLAMA_BASE_URL);
+        return raw != null && !raw.trim().isEmpty();
+    }
+
+    /**
+     * Resolved Ollama API base URL: JVM {@link #PROP_OLLAMA_BASE_URL} wins; otherwise {@code storedOrUiUrl} if
+     * non-blank; otherwise {@link OllamaClient#DEFAULT_BASE_URL}. The result is always normalized.
+     */
+    public static String resolveOllamaBaseUrl(String storedOrUiUrl) {
+        String p = System.getProperty(PROP_OLLAMA_BASE_URL);
+        if (p != null && !p.trim().isEmpty()) {
+            return normalizeOllamaBaseUrl(p);
+        }
+        return normalizeOllamaBaseUrl(storedOrUiUrl);
+    }
+
+    /**
+     * Turns a user-entered host or URL into an Ollama API base URL.
+     * <p>
+     * Blank input becomes {@link OllamaClient#DEFAULT_BASE_URL}. A host or {@code host:port} without a scheme
+     * gets {@code http://}. Trailing slashes are stripped. HTTP URLs without an explicit port use
+     * {@value OllamaClient#DEFAULT_PORT} (Ollama's default). HTTPS without a port is left as-is so a reverse
+     * proxy on 443 keeps working.
+     */
+    public static String normalizeOllamaBaseUrl(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return OllamaClient.DEFAULT_BASE_URL;
+        }
+        String s = raw.trim();
+        while (s.endsWith("/") && s.length() > 1) {
+            s = s.substring(0, s.length() - 1);
+        }
+        if (!s.contains("://")) {
+            s = "http://" + s;
+        }
+        try {
+            URL u = new URL(s);
+            String host = u.getHost();
+            if (host == null || host.isEmpty()) {
+                return OllamaClient.DEFAULT_BASE_URL;
+            }
+            String protocol = u.getProtocol();
+            int port = u.getPort();
+            if (port == -1 && "http".equalsIgnoreCase(protocol)) {
+                port = OllamaClient.DEFAULT_PORT;
+            }
+            StringBuilder out = new StringBuilder();
+            out.append(protocol).append("://");
+            if (host.indexOf(':') >= 0 && !host.startsWith("[")) {
+                out.append('[').append(host).append(']');
+            } else {
+                out.append(host);
+            }
+            if (port != -1) {
+                out.append(':').append(port);
+            }
+            String path = u.getPath();
+            if (path != null && !path.isEmpty() && !"/".equals(path)) {
+                if (path.endsWith("/")) {
+                    path = path.substring(0, path.length() - 1);
+                }
+                out.append(path);
+            }
+            return out.toString();
+        } catch (MalformedURLException e) {
+            return OllamaClient.DEFAULT_BASE_URL;
+        }
     }
 
     /**

@@ -24,6 +24,8 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.events.FocusAdapter;
+import org.eclipse.swt.events.FocusEvent;
 import org.eclipse.swt.events.KeyAdapter;
 import org.eclipse.swt.events.KeyEvent;
 import org.eclipse.swt.events.SelectionAdapter;
@@ -50,6 +52,7 @@ import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.part.ViewPart;
 
+import com.archimatetool.archigpt.preferences.ArchiGPTPreferencePage;
 import com.archimatetool.editor.model.IEditorModelManager;
 import com.archimatetool.model.IArchimateConcept;
 import com.archimatetool.model.IArchimateDiagramModel;
@@ -82,6 +85,7 @@ public class ArchiGPTView extends ViewPart {
     private Button sendButton;
     private Button saveAsButton;
     private Combo ollamaModelCombo;
+    private Text ollamaBaseUrlText;
     private Button refreshOllamaModelsButton;
     private String persistedOllamaModel;
     private Label buildLabel;
@@ -135,6 +139,57 @@ public class ArchiGPTView extends ViewPart {
         mainLayout.verticalSpacing = 8;
         mainComposite.setLayout(mainLayout);
 
+        Composite serverRow = new Composite(mainComposite, SWT.NONE);
+        serverRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout serverRowLayout = new GridLayout(3, false);
+        serverRowLayout.marginWidth = 0;
+        serverRowLayout.marginHeight = 0;
+        serverRowLayout.horizontalSpacing = 8;
+        serverRow.setLayout(serverRowLayout);
+
+        Label serverLabel = new Label(serverRow, SWT.NONE);
+        serverLabel.setText("Ollama server:");
+        GridData serverLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        serverLabelData.widthHint = 100;
+        serverLabel.setLayoutData(serverLabelData);
+
+        ollamaBaseUrlText = new Text(serverRow, SWT.BORDER);
+        ollamaBaseUrlText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        ollamaBaseUrlText.setMessage(OllamaClient.DEFAULT_BASE_URL);
+        ollamaBaseUrlText.setText(ArchiGPTPreferences.getBaseUrl());
+        ollamaBaseUrlText.setToolTipText("Ollama API URL, e.g. http://192.168.1.10:11434. Leave as localhost for Ollama on this machine.");
+        if (LlmContextConfig.hasExplicitOllamaBaseUrl()) {
+            ollamaBaseUrlText.setEnabled(false);
+            ollamaBaseUrlText.setToolTipText("Server URL is fixed by -D" + LlmContextConfig.PROP_OLLAMA_BASE_URL + "="
+                    + System.getProperty(LlmContextConfig.PROP_OLLAMA_BASE_URL).trim());
+        } else {
+            ollamaBaseUrlText.addFocusListener(new FocusAdapter() {
+                @Override
+                public void focusLost(FocusEvent e) {
+                    persistOllamaBaseUrlFromField();
+                }
+            });
+            ollamaBaseUrlText.addKeyListener(new KeyAdapter() {
+                @Override
+                public void keyPressed(KeyEvent e) {
+                    if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) {
+                        persistOllamaBaseUrlFromField();
+                        scheduleRefreshOllamaModelList(true);
+                    }
+                }
+            });
+        }
+
+        Button settingsButton = new Button(serverRow, SWT.PUSH);
+        settingsButton.setText("Settings…");
+        settingsButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        settingsButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                openOllamaSettings();
+            }
+        });
+
         Composite modelRow = new Composite(mainComposite, SWT.NONE);
         modelRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         GridLayout modelRowLayout = new GridLayout(3, false);
@@ -145,7 +200,9 @@ public class ArchiGPTView extends ViewPart {
 
         Label modelLabel = new Label(modelRow, SWT.NONE);
         modelLabel.setText("Ollama model:");
-        modelLabel.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+        GridData modelLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        modelLabelData.widthHint = 100;
+        modelLabel.setLayoutData(modelLabelData);
 
         ollamaModelCombo = new Combo(modelRow, SWT.DROP_DOWN);
         GridData comboData = new GridData(SWT.FILL, SWT.CENTER, true, false);
@@ -171,6 +228,7 @@ public class ArchiGPTView extends ViewPart {
         refreshOllamaModelsButton.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
+                persistOllamaBaseUrlFromField();
                 scheduleRefreshOllamaModelList(false);
             }
         });
@@ -295,11 +353,12 @@ public class ArchiGPTView extends ViewPart {
         if (LlmContextConfig.hasExplicitOllamaModel()) {
             return;
         }
+        final String baseUrl = currentOllamaBaseUrl();
         Job job = new Job("ArchiGPT – Ollama models") {
             @Override
             protected IStatus run(IProgressMonitor monitor) {
                 try {
-                    List<String> names = new OllamaClient().fetchInstalledModelNames();
+                    List<String> names = new OllamaClient(baseUrl, OllamaClient.DEFAULT_MODEL).fetchInstalledModelNames();
                     Display.getDefault().asyncExec(() -> {
                         if (ollamaModelCombo == null || ollamaModelCombo.isDisposed()) {
                             return;
@@ -344,8 +403,9 @@ public class ArchiGPTView extends ViewPart {
                                 org.eclipse.swt.widgets.MessageBox box = new org.eclipse.swt.widgets.MessageBox(sh,
                                         SWT.ICON_INFORMATION | SWT.OK);
                                 box.setText("Ollama models");
-                                box.setMessage("Could not list models: " + (e.getMessage() != null ? e.getMessage() : e.toString())
-                                        + "\n\nEnsure Ollama is running. You can still type a model name in the field.");
+                                box.setMessage("Could not list models from " + baseUrl + ": "
+                                        + (e.getMessage() != null ? e.getMessage() : e.toString())
+                                        + "\n\nEnsure Ollama is running and the server URL is correct. You can still type a model name in the field.");
                                 box.open();
                             }
                         });
@@ -356,6 +416,40 @@ public class ArchiGPTView extends ViewPart {
         };
         job.setSystem(true);
         job.schedule();
+    }
+
+    private String currentOllamaBaseUrl() {
+        String fromField = (ollamaBaseUrlText != null && !ollamaBaseUrlText.isDisposed())
+                ? ollamaBaseUrlText.getText() : "";
+        return LlmContextConfig.resolveOllamaBaseUrl(fromField);
+    }
+
+    private void persistOllamaBaseUrlFromField() {
+        if (LlmContextConfig.hasExplicitOllamaBaseUrl()) {
+            return;
+        }
+        if (ollamaBaseUrlText == null || ollamaBaseUrlText.isDisposed()) {
+            return;
+        }
+        String normalized = currentOllamaBaseUrl();
+        if (!normalized.equals(ollamaBaseUrlText.getText().trim())) {
+            ollamaBaseUrlText.setText(normalized);
+        }
+        try {
+            ArchiGPTPreferences.setBaseUrl(normalized);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void openOllamaSettings() {
+        persistOllamaBaseUrlFromField();
+        org.eclipse.swt.widgets.Shell shell = getViewSite() != null ? getViewSite().getShell() : null;
+        ArchiGPTPreferencePage.openDialog(shell);
+        if (ollamaBaseUrlText != null && !ollamaBaseUrlText.isDisposed()
+                && !LlmContextConfig.hasExplicitOllamaBaseUrl()) {
+            ollamaBaseUrlText.setText(ArchiGPTPreferences.getBaseUrl());
+        }
+        scheduleRefreshOllamaModelList(true);
     }
 
     @Override
@@ -778,11 +872,13 @@ public class ArchiGPTView extends ViewPart {
         final String promptFinal = prompt;
         final String ollamaModelResolved = LlmContextConfig.resolveOllamaModel(
                 ollamaModelCombo != null && !ollamaModelCombo.isDisposed() ? ollamaModelCombo.getText() : "");
+        persistOllamaBaseUrlFromField();
+        final String ollamaBaseUrlResolved = currentOllamaBaseUrl();
 
         // Discover Ollama context (POST /api/show) unless -Darchigpt.ollamaNumCtx is set; size XML to leave reply headroom
         int reportedOllamaCtx = 0;
         try {
-            reportedOllamaCtx = new OllamaClient(OllamaClient.DEFAULT_BASE_URL, ollamaModelResolved).fetchReportedContextTokens();
+            reportedOllamaCtx = new OllamaClient(ollamaBaseUrlResolved, ollamaModelResolved).fetchReportedContextTokens();
         } catch (IOException ignored) {
         }
         final int numCtxForOllama = LlmContextConfig.resolveOllamaNumCtx(reportedOllamaCtx);
@@ -878,7 +974,11 @@ public class ArchiGPTView extends ViewPart {
         }
         summary.append("Prompt: ").append(promptFinal).append("\n\n");
         summary.append("Selection context: ").append(selectionContextFinal != null && !selectionContextFinal.isEmpty() ? selectionContextFinal.trim() : "(none)").append("\n\n");
-        summary.append("Ollama model: ").append(ollamaModelResolved);
+        summary.append("Ollama server: ").append(ollamaBaseUrlResolved);
+        if (LlmContextConfig.hasExplicitOllamaBaseUrl()) {
+            summary.append(" (from -D").append(LlmContextConfig.PROP_OLLAMA_BASE_URL).append("; overrides the view field)");
+        }
+        summary.append("\nOllama model: ").append(ollamaModelResolved);
         if (LlmContextConfig.hasExplicitOllamaModel()) {
             summary.append(" (from -D").append(LlmContextConfig.PROP_OLLAMA_MODEL).append("; overrides the view field)");
         }
@@ -1002,9 +1102,10 @@ public class ArchiGPTView extends ViewPart {
                 String raw = null;
                 String toShow = "";
                 try {
-                    OllamaClient client = new OllamaClient(OllamaClient.DEFAULT_BASE_URL, ollamaModelResolved);
+                    OllamaClient client = new OllamaClient(ollamaBaseUrlResolved, ollamaModelResolved);
                     if (!client.checkConnection()) {
-                        finishRequest("Cannot reach Ollama at " + OllamaClient.DEFAULT_BASE_URL + ". Is Ollama running? (e.g. ollama serve)");
+                        finishRequest("Cannot reach Ollama at " + ollamaBaseUrlResolved
+                                + ". Is Ollama running and reachable? For a LAN server, set the URL in Settings and ensure that host listens on the network (e.g. OLLAMA_HOST=0.0.0.0).");
                         return Status.OK_STATUS;
                     }
                     updateStatus("Connection OK. Sending request to Ollama. Waiting for response (this may take a minute)…");
