@@ -188,6 +188,42 @@ public class ArchiMateSchemaValidatorTest {
     }
 
     @Test
+    public void validate_unqualifiedActor_mapsToBusinessActor() {
+        ArchiMateLLMResult result = new ArchiMateLLMResult();
+        ArchiMateLLMResult.ElementSpec e = new ArchiMateLLMResult.ElementSpec();
+        e.setType("Actor");
+        e.setName("Customer");
+        e.setId(E1);
+        result.getElements().add(e);
+
+        List<String> errors = ArchiMateSchemaValidator.validate(result);
+        assertTrue("Actor should be accepted (normalized to BusinessActor): " + errors, errors.isEmpty());
+    }
+
+    @Test
+    public void validate_usedByRelationship_mappedToServing() {
+        ArchiMateLLMResult result = new ArchiMateLLMResult();
+        ArchiMateLLMResult.ElementSpec e1 = new ArchiMateLLMResult.ElementSpec();
+        e1.setType("ApplicationService");
+        e1.setName("Ordering");
+        e1.setId(E1);
+        result.getElements().add(e1);
+        ArchiMateLLMResult.ElementSpec e2 = new ArchiMateLLMResult.ElementSpec();
+        e2.setType("BusinessProcess");
+        e2.setName("Place order");
+        e2.setId(E2);
+        result.getElements().add(e2);
+        ArchiMateLLMResult.RelationshipSpec r = new ArchiMateLLMResult.RelationshipSpec();
+        r.setType("UsedByRelationship");
+        r.setSource(E1);
+        r.setTarget(E2);
+        result.getRelationships().add(r);
+
+        List<String> errors = ArchiMateSchemaValidator.validate(result);
+        assertTrue("UsedByRelationship should be accepted as ServingRelationship: " + errors, errors.isEmpty());
+    }
+
+    @Test
     public void normalizeElementType_elementTypeWithSpaces_passesValidation() {
         // Validator strips spaces so "Business Actor" -> "BusinessActor"
         ArchiMateLLMResult result = new ArchiMateLLMResult();
@@ -199,5 +235,28 @@ public class ArchiMateSchemaValidatorTest {
 
         List<String> errors = ArchiMateSchemaValidator.validate(result);
         assertTrue("Type with spaces should be accepted (normalized): " + errors, errors.isEmpty());
+    }
+
+    @Test
+    public void validate_interactionRelationship_mappedToAssociation() {
+        ArchiMateLLMResult result = new ArchiMateLLMResult();
+        ArchiMateLLMResult.ElementSpec e1 = new ArchiMateLLMResult.ElementSpec();
+        e1.setType("BusinessActor");
+        e1.setName("Customer");
+        e1.setId(E1);
+        result.getElements().add(e1);
+        ArchiMateLLMResult.ElementSpec e2 = new ArchiMateLLMResult.ElementSpec();
+        e2.setType("BusinessRole");
+        e2.setName("Waiter");
+        e2.setId(E2);
+        result.getElements().add(e2);
+        ArchiMateLLMResult.RelationshipSpec r = new ArchiMateLLMResult.RelationshipSpec();
+        r.setType("InteractionRelationship");
+        r.setSource(E1);
+        r.setTarget(E2);
+        result.getRelationships().add(r);
+
+        List<String> errors = ArchiMateSchemaValidator.validate(result);
+        assertTrue("InteractionRelationship should be accepted as AssociationRelationship: " + errors, errors.isEmpty());
     }
 }
