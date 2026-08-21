@@ -60,8 +60,6 @@ This is **not** about Ollama “remembering” old chats (each request is statel
 
 **Practical takeaway:** the same **Ollama model name** can feel like a **different tool** on a machine that can sustain **higher context and larger weights** without swap-bound latency.
 
-The same trend, over a few hardware generations, is why **local LLMs become accessible to more people**, not only to those with a high-end Mac or a GPU server. When a mid-range laptop can run a mid-size instruction-tuned model at interactive speed, plugins like ArchiGPT (and the sibling Ollama tools for Blender, Inkscape, Chrome, Keynote, and Bondie on iPhone) stop being niche experiments and become everyday apps. ArchiGPT already lets you point at Ollama on **another machine on the LAN**, so a household or office can share one capable host—including from a phone—without sending architecture XML to a cloud API.
-
 ---
 
 ## 4. Local models via Ollama (examples)
@@ -145,5 +143,3 @@ Examples:
 ## 8. Summary
 
 **Moving to a more capable language model** improves ArchiGPT mainly through **better reasoning**, **better adherence** to ArchiMate output rules, and (when context and hardware allow) **more XML in one request**, which **reduces chunking** and **whole-model confusion**. **Enterprise exchange files** are often **multi-megabyte** once views are included (**§2**), so **chunking** and **context limits** are normal—not only theoretical. **Upgrading from an M2 Pro 32 GB to a much higher-memory Apple Silicon machine** is less about “Ollama remembering” and more about **actually running** larger models and **larger effective context** at usable speed—so the **same plugin** can behave closer to what you would expect from **frontier API** models (**Gemini 4**, **Claude Mythos**, and similar), still entirely **on your desk** if you use Ollama.
-
-That hardware curve also **widens who can use local models at all**. As capacity per euro/dollar of laptop (and per watt of a shared home server) grows, the Ollama-based tools around ArchiGPT become usable for more people without a cloud subscription—Archi, Blender, Inkscape, Chrome, Keynote, and Bondie on iPhone against one local server. Cloud remains an option when policy and budget allow; **local-first** is the default on `main` because it is the path that keeps getting cheaper as computers get faster.
