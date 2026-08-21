@@ -2,6 +2,8 @@
 
 Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) with an LLM so you can extend and analyze your model using natural language. This repo provides the **ArchiGPT** plugin.
 
+ArchiGPT talks to a **local [Ollama](https://ollama.com)** server by default: your ArchiMate content stays on your machine (or LAN). That same pattern now exists for several other apps in this family—Blender, Inkscape, Chrome, Keynote, and the **Bondie** iPhone app—so one Ollama host can serve modelling, 3D, illustration, the browser, slides, and your phone. As consumer hardware keeps getting faster and cheaper, useful local models become practical for more people, not only for machines with a cloud API key.
+
 ---
 
 ## Installing the plugin
@@ -35,7 +37,9 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
 - **Archi** — [Download Archi](https://www.archimatetool.com/download/) if you don’t have it.
 - **Ollama** — The plugin talks to [Ollama](https://ollama.com). Install Ollama and start it (e.g. run `ollama serve` or use the Ollama app). By default the plugin uses `http://localhost:11434` and model `llama3.2`.
 
-  To use Ollama on **another machine on the LAN**, set the server URL in the ArchiGPT view (**Ollama server**) or in **ArchiGPT → ArchiGPT Preferences…** (also **Window → Preferences → ArchiGPT**), for example `http://192.168.1.10:11434` or just `192.168.1.10`. That host must listen on the network (e.g. `OLLAMA_HOST=0.0.0.0`). You can also set `-Darchigpt.ollamaBaseUrl=http://192.168.1.10:11434` in Archi.ini (`vmargs`).
+  To use Ollama on **another machine on the LAN** (including from **Bondie** on an iPhone on the same network), set the server URL in the ArchiGPT view (**Ollama server**) or in **ArchiGPT → ArchiGPT Preferences…** (also **Window → Preferences → ArchiGPT**), for example `http://192.168.1.10:11434` or just `192.168.1.10`. That host must listen on the network (e.g. `OLLAMA_HOST=0.0.0.0`). You can also set `-Darchigpt.ollamaBaseUrl=http://192.168.1.10:11434` in Archi.ini (`vmargs`).
+
+  How hardware and model size change what ArchiGPT can do—and why that keeps getting easier for more people—is covered in **[docs/languagemodel.md](docs/languagemodel.md)**.
 
 ---
 
@@ -95,7 +99,23 @@ You may use, modify, and redistribute this plug-in; **keep the copyright and per
 
 ---
 
+## Related local Ollama tools
+
+These are sibling projects that use the same idea: a **digest of the current work**, a prompt to **Ollama**, and (where the host app allows it) **allowlisted structured edits**. Point them at the same Ollama URL when you want one local model behind several tools.
+
+| Tool | What it does |
+|------|----------------|
+| **ArchiGPT** (this repo) | ArchiMate modelling in [Archi](https://www.archimatetool.com/) |
+| [BlenderGPT](https://github.com/fideocam/BlenderGPT) | Blender add-on: scene digest and JSON-driven edits |
+| [InkscapeGPT](https://github.com/fideocam/Inkscape-Ollama-extension) | Inkscape extension: document digest and SVG actions |
+| [ChromeGPT](https://github.com/fideocam/ChromeGPT) | Chrome extension: local LLM help for form fields and chat |
+| [KeynoteGPT](https://github.com/fideocam/KeynoteGPT) | macOS companion that drives Apple Keynote via JXA |
+| **Bondie** | iPhone app: chat with the same local/LAN Ollama server from your phone |
+
+Local inference used to need a workstation-class box. That bar keeps dropping: more RAM, better NPUs/GPUs, and smaller high-quality checkpoints mean a laptop (and a phone talking to that laptop) is enough for useful work. Cloud APIs remain optional on the [`feature/external-llm`](https://github.com/fideocam/Archi-LLM-plugin/tree/feature/external-llm) branch; **`main` stays Ollama-only**.
+
 ## More information
 
+- [Language models and ArchiGPT capability](docs/languagemodel.md) — context windows, enterprise XML size, local hardware, and why stronger machines change the tool.
 - [Open Group ArchiMate](https://www.opengroup.org/archimate-forum) and [Archi](https://www.archimatetool.com/) for modeling.
 - [Developing Import and Export Plug-ins](https://github.com/archimatetool/archi/wiki/Developing-Import-and-Export-Plug-ins) for Archi plugin development.
