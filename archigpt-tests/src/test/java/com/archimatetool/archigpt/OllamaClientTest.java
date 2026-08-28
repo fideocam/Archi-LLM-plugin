@@ -130,4 +130,11 @@ public class OllamaClientTest {
         assertEquals("/api/show", lastRequestPath);
         assertTrue(lastRequestBody != null && lastRequestBody.contains("mymodel"));
     }
+
+    @Test
+    public void sanitizeModelName_dropsQuotesAndControls() {
+        assertEquals(OllamaClient.DEFAULT_MODEL, OllamaClient.sanitizeModelName("x\"y"));
+        assertEquals(OllamaClient.DEFAULT_MODEL, OllamaClient.sanitizeModelName("x\ny"));
+        assertEquals("mistral:7b", OllamaClient.sanitizeModelName(" mistral:7b "));
+    }
 }

@@ -29,5 +29,8 @@ mvn install -P with-archi
 - **ArchiMateImportFlowTest**: Parse → validate → import into an in-memory model. *Skipped when Archi model is not on classpath.*
 - **ArchiMateAnalysisUseCaseTest**: Enterprise-architecture analysis use cases; user message format; plain-text response not parsed as import.
 - **SelectionInPromptTest**: Selection context and prompt included in user message.
+- **OllamaEndpointTest**: URL policy (LAN defaults, metadata encodings, credentials, non-HTTP schemes).
+- **MutationPolicyTest**: Delete confirmation rules and batch caps.
+- **KnowledgeRetrieverTest**: Keyword RAG from a local folder into the user message.
 
 Validator and import tests require the Archi model (`IArchimatePackage`, `IArchimateFactory`) on the classpath; they are skipped automatically when absent.

@@ -37,6 +37,8 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
 
   To use Ollama on **another machine on the LAN**, set the server URL in the ArchiGPT view (**Ollama server**) or in **ArchiGPT → ArchiGPT Preferences…** (also **Window → Preferences → ArchiGPT**), for example `http://192.168.1.10:11434` or just `192.168.1.10`. That host must listen on the network (e.g. `OLLAMA_HOST=0.0.0.0`). You can also set `-Darchigpt.ollamaBaseUrl=http://192.168.1.10:11434` in Archi.ini (`vmargs`).
 
+- **Company knowledge (optional)** — Copy [`knowledge/`](knowledge/) to `~/.archigpt/knowledge/` (or pick a folder in Preferences). Matching Markdown/CSV is injected into each Ask. See **[docs/RAG_OLLAMA.md](docs/RAG_OLLAMA.md)**.
+
 ---
 
 ## Using ArchiGPT
@@ -99,3 +101,5 @@ You may use, modify, and redistribute this plug-in; **keep the copyright and per
 
 - [Open Group ArchiMate](https://www.opengroup.org/archimate-forum) and [Archi](https://www.archimatetool.com/) for modeling.
 - [Developing Import and Export Plug-ins](https://github.com/archimatetool/archi/wiki/Developing-Import-and-Export-Plug-ins) for Archi plugin development.
+- [RAG / company knowledge](docs/RAG_OLLAMA.md) — principles, CMDB extract, example viewpoints, tiedonhallintamalli.
+- [Security](docs/SECURITY.md) — Ollama URL policy, mutation caps, delete confirmation.

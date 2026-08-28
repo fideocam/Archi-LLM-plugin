@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.Proxy;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -35,8 +36,34 @@ public class OllamaClient {
     }
 
     public OllamaClient(String baseUrl, String model) {
-        this.baseUrl = baseUrl.replaceAll("/$", "");
-        this.model = model != null ? model : DEFAULT_MODEL;
+        this.baseUrl = OllamaEndpoint.normalizeOrDefault(baseUrl);
+        this.model = sanitizeModelName(model);
+    }
+
+    /**
+     * Drop quotes, backslashes, and control characters so a model tag cannot break the JSON body.
+     */
+    public static String sanitizeModelName(String model) {
+        if (model == null || model.trim().isEmpty()) {
+            return DEFAULT_MODEL;
+        }
+        String t = model.trim();
+        if (t.length() > 128) {
+            t = t.substring(0, 128);
+        }
+        for (int i = 0; i < t.length(); i++) {
+            char c = t.charAt(i);
+            if (c < 32 || c == '"' || c == '\\') {
+                return DEFAULT_MODEL;
+            }
+        }
+        return t;
+    }
+
+    private static HttpURLConnection openOllama(URL url) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection(Proxy.NO_PROXY);
+        conn.setInstanceFollowRedirects(false);
+        return conn;
     }
 
     /**
@@ -51,7 +78,7 @@ public class OllamaClient {
     public int fetchReportedContextTokens() throws IOException {
         String body = "{\"model\":\"" + escapeJson(model) + "\"}";
         URL url = new URL(baseUrl + "/api/show");
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        HttpURLConnection conn = openOllama(url);
         try {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
@@ -79,7 +106,7 @@ public class OllamaClient {
      */
     public List<String> fetchInstalledModelNames() throws IOException {
         URL url = new URL(baseUrl + "/api/tags");
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        HttpURLConnection conn = openOllama(url);
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(5000);
         conn.setReadTimeout(10000);
@@ -100,7 +127,7 @@ public class OllamaClient {
     public boolean checkConnection() {
         try {
             URL url = new URL(baseUrl + "/api/tags");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            HttpURLConnection conn = openOllama(url);
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(3000);
             conn.setReadTimeout(3000);
@@ -145,7 +172,7 @@ public class OllamaClient {
             AtomicReference<HttpURLConnection> connectionHolder, int numCtx) throws IOException {
         String requestBody = buildChatRequestJson(systemPrompt, userPrompt, numCtx);
         URL url = new URL(baseUrl + "/api/chat");
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        HttpURLConnection conn = openOllama(url);
         if (connectionHolder != null) {
             connectionHolder.set(conn);
         }
@@ -231,7 +258,7 @@ public class OllamaClient {
     public String generate(String prompt) throws IOException {
         String requestBody = buildRequestJson(prompt);
         URL url = new URL(baseUrl + "/api/generate");
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        HttpURLConnection conn = openOllama(url);
         try {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");

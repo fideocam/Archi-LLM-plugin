@@ -77,7 +77,21 @@ public final class ModelContextChunkPlanner {
         if (s == null) {
             return "";
         }
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+        StringBuilder b = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < 32) {
+                continue;
+            }
+            switch (c) {
+                case '&': b.append("&amp;"); break;
+                case '<': b.append("&lt;"); break;
+                case '>': b.append("&gt;"); break;
+                case '"': b.append("&quot;"); break;
+                default: b.append(c);
+            }
+        }
+        return b.toString();
     }
 
     /**

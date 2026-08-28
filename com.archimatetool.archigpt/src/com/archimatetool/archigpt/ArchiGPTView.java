@@ -41,6 +41,7 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Text;
+import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.ui.IEditorPart;
@@ -874,6 +875,9 @@ public class ArchiGPTView extends ViewPart {
                 ollamaModelCombo != null && !ollamaModelCombo.isDisposed() ? ollamaModelCombo.getText() : "");
         persistOllamaBaseUrlFromField();
         final String ollamaBaseUrlResolved = currentOllamaBaseUrl();
+        final String knowledgeFolder = ArchiGPTPreferences.getKnowledgeFolder();
+        final int knowledgeMaxChars = ArchiGPTPreferences.getKnowledgeMaxChars();
+        final String knowledgeBlock = KnowledgeRetriever.retrieve(knowledgeFolder, promptFinal, knowledgeMaxChars);
 
         // Discover Ollama context (POST /api/show) unless -Darchigpt.ollamaNumCtx is set; size XML to leave reply headroom
         int reportedOllamaCtx = 0;
@@ -882,7 +886,8 @@ public class ArchiGPTView extends ViewPart {
         } catch (IOException ignored) {
         }
         final int numCtxForOllama = LlmContextConfig.resolveOllamaNumCtx(reportedOllamaCtx);
-        int overheadEstimate = UserMessageBuilder.estimateNonXmlOverheadChars(selectionContextFinal, promptFinal);
+        int overheadEstimate = UserMessageBuilder.estimateNonXmlOverheadChars(selectionContextFinal, promptFinal,
+                knowledgeBlock);
         final int maxXmlChars = LlmContextConfig.resolveMaxXmlChars(numCtxForOllama,
                 ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), overheadEstimate);
 
@@ -1016,6 +1021,13 @@ public class ArchiGPTView extends ViewPart {
                 summary.append(" (-D").append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append(")");
             }
         }
+        if (knowledgeBlock != null && !knowledgeBlock.isEmpty()) {
+            summary.append("\nCompany knowledge: ").append(knowledgeBlock.length())
+                    .append(" characters retrieved from ").append(knowledgeFolder);
+        } else {
+            summary.append("\nCompany knowledge: none (folder ").append(knowledgeFolder)
+                    .append(" empty or missing; copy repo knowledge/ there or set Preferences)");
+        }
         if (chunkedAnalysis && analysisPlannedChunks != null) {
             summary.append("\nChunked analysis: ").append(analysisPlannedChunks.size()).append(" sequential requests (plain text only)");
             if (analysisChunksSemantic) {
@@ -1050,7 +1062,7 @@ public class ArchiGPTView extends ViewPart {
         if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
             if (chunkedAnalysis && analysisPlannedChunks != null && !analysisPlannedChunks.isEmpty()) {
                 xmlPreviewText.setText(buildChunkedOllamaDebugPreview(analysisModelDigest, analysisPlannedChunks,
-                        selectionContextFinal, promptFinal, MAX_CHUNKED_DEBUG_PREVIEW_CHARS));
+                        selectionContextFinal, promptFinal, knowledgeBlock, MAX_CHUNKED_DEBUG_PREVIEW_CHARS));
             } else {
                 xmlPreviewText.setText(modelXmlForRequest != null ? modelXmlForRequest : "");
             }
@@ -1060,7 +1072,7 @@ public class ArchiGPTView extends ViewPart {
         final IArchimateModel modelForImport = model;
 
         final String userMessage = chunkedAnalysis ? ""
-                : UserMessageBuilder.buildUserMessage(selectionContextFinal, modelXmlForRequest, promptFinal);
+                : UserMessageBuilder.buildUserMessage(selectionContextFinal, modelXmlForRequest, promptFinal, knowledgeBlock);
         if (!chunkedAnalysis) {
             summary.append(LlmContextConfig.contextPerformanceWarning(fullXmlLength, xmlLen, userMessage.length(),
                     ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), numCtxForOllama));
@@ -1121,7 +1133,7 @@ public class ArchiGPTView extends ViewPart {
                                 String scope = pc.title != null && !pc.title.isEmpty() ? " — " + pc.title : "";
                                 updateStatus("Analysis excerpt " + (i + 1) + "/" + analysisPlannedChunks.size() + scope + " — Ollama…");
                                 String chunkUser = ChunkAnalysisPrompt.buildChunkUserMessage(analysisModelDigest, pc.title, pc.xml,
-                                        i + 1, analysisPlannedChunks.size(), selectionContextFinal, promptFinal);
+                                        i + 1, analysisPlannedChunks.size(), selectionContextFinal, promptFinal, knowledgeBlock);
                                 String part = client.generateWithSystemPrompt(ChunkAnalysisPrompt.SYSTEM_PROMPT, chunkUser,
                                         currentConnectionRef, numCtxForOllama);
                                 acc.append("--- Excerpt ").append(i + 1).append("/").append(analysisPlannedChunks.size());
@@ -1150,6 +1162,14 @@ public class ArchiGPTView extends ViewPart {
                     }
                     updateStatus("Response received. Parsing and validating…");
                     ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(raw);
+                    if (parsed.getError() != null && parsed.getError().startsWith("Reply too large")) {
+                        finishRequest(parsed.getError());
+                        return Status.OK_STATUS;
+                    }
+                    if (!ArchiMateLLMResultParser.looksLikeChangesJson(raw)) {
+                        finishRequest("Analysis result:\n\n" + raw);
+                        return Status.OK_STATUS;
+                    }
                     boolean hasDiagram = parsed.getDiagram() != null && parsed.getDiagram().getName() != null && !parsed.getDiagram().getName().isEmpty();
                     boolean hasImportData = !parsed.getElements().isEmpty() || !parsed.getRelationships().isEmpty()
                             || !parsed.getRemoveElementIds().isEmpty() || !parsed.getRemoveRelationshipIds().isEmpty()
@@ -1161,9 +1181,11 @@ public class ArchiGPTView extends ViewPart {
                     } else if (!hasImportData) {
                         toShow = "Analysis result:\n\n" + raw;
                     } else {
-                        List<String> errors = ArchiMateSchemaValidator.validate(parsed);
+                        List<String> errors = new ArrayList<>();
+                        errors.addAll(ArchiMateSchemaValidator.validate(parsed));
+                        errors.addAll(MutationPolicy.checkLimits(parsed));
                         if (!errors.isEmpty()) {
-                            toShow = "Validation failed (ArchiMate 3.2 schema):\n\n" + String.join("\n", errors)
+                            toShow = "Validation failed:\n\n" + String.join("\n", errors)
                                     + "\n\nRaw LLM response:\n" + truncate(raw, 4000);
                         } else {
                             final ArchiMateLLMResult resultToImport = parsed;
@@ -1188,6 +1210,23 @@ public class ArchiGPTView extends ViewPart {
                                                 && !resultToImport.getDiagram().getName().isEmpty()) {
                                             resultToImport.setDiagram(null);
                                             droppedLlmDiagram = true;
+                                        }
+                                    }
+                                    if (MutationPolicy.isDestructive(resultToImport)) {
+                                        org.eclipse.swt.widgets.Shell shell = getSite() != null ? getSite().getShell() : null;
+                                        if (shell == null) {
+                                            shell = Display.getDefault().getActiveShell();
+                                        }
+                                        if (shell == null) {
+                                            importMessage[0] = "Delete confirmation UI unavailable; the model was not changed.";
+                                            return;
+                                        }
+                                        boolean ok = MessageDialog.open(MessageDialog.QUESTION, shell, "ArchiGPT",
+                                                MutationPolicy.destructiveSummary(resultToImport), SWT.NONE,
+                                                new String[] { "Cancel", "Delete from model" }, 0) == 1;
+                                        if (!ok) {
+                                            importMessage[0] = "Delete cancelled. The model was not changed.";
+                                            return;
                                         }
                                     }
                                     ArchiMateLLMImporter.importIntoModel(resultToImport, model, targetFolder, targetDiagram);
@@ -1256,7 +1295,8 @@ public class ArchiGPTView extends ViewPart {
      * Full user message for each chunked analysis call (matches what is sent to Ollama) for the Debug XML preview.
      */
     private static String buildChunkedOllamaDebugPreview(String digest,
-            List<ModelContextChunkPlanner.PlannedChunk> chunks, String selectionContext, String prompt, int maxChars) {
+            List<ModelContextChunkPlanner.PlannedChunk> chunks, String selectionContext, String prompt,
+            String knowledge, int maxChars) {
         if (chunks == null || chunks.isEmpty()) {
             return "";
         }
@@ -1271,7 +1311,8 @@ public class ArchiGPTView extends ViewPart {
             }
             sb.append(header);
             ModelContextChunkPlanner.PlannedChunk pc = chunks.get(i);
-            String um = ChunkAnalysisPrompt.buildChunkUserMessage(digest, pc.title, pc.xml, i + 1, n, selectionContext, prompt);
+            String um = ChunkAnalysisPrompt.buildChunkUserMessage(digest, pc.title, pc.xml, i + 1, n,
+                    selectionContext, prompt, knowledge);
             if (sb.length() + um.length() > maxChars) {
                 int take = maxChars - sb.length() - 32;
                 if (take > 0) {

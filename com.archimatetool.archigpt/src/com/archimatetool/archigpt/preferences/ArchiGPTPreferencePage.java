@@ -10,6 +10,7 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.DirectoryDialog;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
@@ -18,6 +19,7 @@ import org.eclipse.ui.IWorkbenchPreferencePage;
 import org.eclipse.ui.dialogs.PreferencesUtil;
 
 import com.archimatetool.archigpt.ArchiGPTPreferences;
+import com.archimatetool.archigpt.KnowledgeRetriever;
 import com.archimatetool.archigpt.LlmContextConfig;
 import com.archimatetool.archigpt.OllamaClient;
 
@@ -30,6 +32,7 @@ public class ArchiGPTPreferencePage extends PreferencePage implements IWorkbench
     public static final String ID = "com.archimatetool.archigpt.preferences";
 
     private Text baseUrlText;
+    private Text knowledgeFolderText;
 
     public static void openDialog(Shell shell) {
         PreferencesUtil.createPreferenceDialogOn(shell, ID, new String[] { ID }, null).open();
@@ -60,6 +63,48 @@ public class ArchiGPTPreferencePage extends PreferencePage implements IWorkbench
                 + "You can also set -D" + LlmContextConfig.PROP_OLLAMA_BASE_URL
                 + " in Archi.ini (vmargs); that overrides this field.");
 
+        Label knowLabel = new Label(body, SWT.NONE);
+        knowLabel.setText("Company knowledge folder:");
+        Composite knowRow = new Composite(body, SWT.NONE);
+        knowRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout knowLayout = new GridLayout(2, false);
+        knowLayout.marginWidth = 0;
+        knowLayout.marginHeight = 0;
+        knowRow.setLayout(knowLayout);
+        knowledgeFolderText = new Text(knowRow, SWT.BORDER);
+        knowledgeFolderText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        knowledgeFolderText.setMessage(KnowledgeRetriever.defaultFolder());
+        Button browse = new Button(knowRow, SWT.PUSH);
+        browse.setText("Browse…");
+        browse.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                DirectoryDialog dialog = new DirectoryDialog(getShell());
+                dialog.setText("Company knowledge folder");
+                dialog.setMessage("Markdown, text, or CSV files here are retrieved into each Ask.");
+                String current = knowledgeFolderText.getText().trim();
+                if (!current.isEmpty()) {
+                    dialog.setFilterPath(current);
+                }
+                String selected = dialog.open();
+                if (selected != null) {
+                    knowledgeFolderText.setText(selected);
+                }
+            }
+        });
+
+        Label knowHint = new Label(body, SWT.WRAP);
+        knowHint.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false, 2, 1));
+        knowHint.setText("On each Ask, ArchiGPT searches matching .md / .txt / .csv files (keyword overlap) "
+                + "and inserts a capped COMPANY KNOWLEDGE block after the model XML. "
+                + "Copy the repo knowledge/ folder here and replace the templates. "
+                + "Default: " + KnowledgeRetriever.defaultFolder() + ". "
+                + "Override with -D" + LlmContextConfig.PROP_KNOWLEDGE_FOLDER + ".");
+        if (LlmContextConfig.hasExplicitKnowledgeFolder()) {
+            knowledgeFolderText.setEnabled(false);
+            browse.setEnabled(false);
+        }
+
         Button test = new Button(body, SWT.PUSH);
         test.setText("Test connection");
         test.setLayoutData(new GridData(SWT.BEGINNING, SWT.CENTER, false, false, 2, 1));
@@ -77,6 +122,7 @@ public class ArchiGPTPreferencePage extends PreferencePage implements IWorkbench
 
     private void loadFromPreferences() {
         baseUrlText.setText(ArchiGPTPreferences.getBaseUrl());
+        knowledgeFolderText.setText(ArchiGPTPreferences.getKnowledgeFolder());
     }
 
     private void applyJvmOverrideState() {
@@ -106,10 +152,12 @@ public class ArchiGPTPreferencePage extends PreferencePage implements IWorkbench
     }
 
     private void savePreferences() throws org.osgi.service.prefs.BackingStoreException {
-        if (LlmContextConfig.hasExplicitOllamaBaseUrl()) {
-            return;
+        if (!LlmContextConfig.hasExplicitOllamaBaseUrl()) {
+            ArchiGPTPreferences.setBaseUrl(urlFromField());
         }
-        ArchiGPTPreferences.setBaseUrl(urlFromField());
+        if (!LlmContextConfig.hasExplicitKnowledgeFolder()) {
+            ArchiGPTPreferences.setKnowledgeFolder(knowledgeFolderText.getText());
+        }
     }
 
     @Override
@@ -127,6 +175,7 @@ public class ArchiGPTPreferencePage extends PreferencePage implements IWorkbench
     @Override
     protected void performDefaults() {
         baseUrlText.setText(OllamaClient.DEFAULT_BASE_URL);
+        knowledgeFolderText.setText(KnowledgeRetriever.defaultFolder());
         applyJvmOverrideState();
     }
 }

@@ -4,8 +4,6 @@
  */
 package com.archimatetool.archigpt;
 
-import java.net.MalformedURLException;
-import java.net.URL;
 
 /**
  * JVM system properties (e.g. in Archi.ini <code>-vmargs</code>):
@@ -17,6 +15,8 @@ import java.net.URL;
  *   <li>{@value #PROP_OLLAMA_READ_TIMEOUT_MS} — max milliseconds to wait for Ollama to finish one chat/generate response (default {@value #DEFAULT_OLLAMA_READ_TIMEOUT_MS}). Use {@code 0} for no read timeout. If you see {@code Read timed out}, try lowering {@value #PROP_OLLAMA_REPORTED_CTX_CAP} or setting an explicit {@value #PROP_OLLAMA_NUM_CTX} before raising the timeout.</li>
  *   <li>{@value #PROP_OLLAMA_MODEL} — Ollama model name (optional). When set, overrides the model chosen in the ArchiGPT view dropdown.</li>
  *   <li>{@value #PROP_OLLAMA_BASE_URL} — Ollama API base URL (optional). When set, overrides the server URL in the ArchiGPT view and preferences (e.g. {@code http://192.168.1.10:11434}).</li>
+ *   <li>{@value #PROP_KNOWLEDGE_FOLDER} — directory of Markdown/text/CSV files injected as COMPANY KNOWLEDGE (optional). When set, overrides the preference store.</li>
+ *   <li>{@value #PROP_KNOWLEDGE_MAX_CHARS} — max characters of retrieved knowledge (optional; default 8000).</li>
  * </ul>
  */
 @SuppressWarnings("nls")
@@ -54,6 +54,12 @@ public final class LlmContextConfig {
      * and preference store.
      */
     public static final String PROP_OLLAMA_BASE_URL = "archigpt.ollamaBaseUrl";
+
+    /** Property: folder of Markdown/text/CSV files injected as COMPANY KNOWLEDGE (optional). */
+    public static final String PROP_KNOWLEDGE_FOLDER = "archigpt.knowledgeFolder";
+
+    /** Property: max characters of retrieved knowledge (optional; default 8000). */
+    public static final String PROP_KNOWLEDGE_MAX_CHARS = "archigpt.knowledgeMaxChars";
 
     /** Default read timeout for one completion (2 minutes). Prefer fixing oversized {@code num_ctx} before raising this. */
     public static final int DEFAULT_OLLAMA_READ_TIMEOUT_MS = 120_000;
@@ -142,10 +148,10 @@ public final class LlmContextConfig {
     public static String resolveOllamaModel(String uiModelName) {
         String p = System.getProperty(PROP_OLLAMA_MODEL);
         if (p != null && !p.trim().isEmpty()) {
-            return p.trim();
+            return OllamaClient.sanitizeModelName(p);
         }
         if (uiModelName != null && !uiModelName.trim().isEmpty()) {
-            return uiModelName.trim();
+            return OllamaClient.sanitizeModelName(uiModelName);
         }
         return OllamaClient.DEFAULT_MODEL;
     }
@@ -158,6 +164,37 @@ public final class LlmContextConfig {
     public static boolean hasExplicitOllamaBaseUrl() {
         String raw = System.getProperty(PROP_OLLAMA_BASE_URL);
         return raw != null && !raw.trim().isEmpty();
+    }
+
+    public static boolean hasExplicitKnowledgeFolder() {
+        String raw = System.getProperty(PROP_KNOWLEDGE_FOLDER);
+        return raw != null && !raw.trim().isEmpty();
+    }
+
+    /**
+     * Knowledge directory: {@code -Darchigpt.knowledgeFolder} wins; otherwise {@code storedOrUiFolder}
+     * if non-blank; otherwise {@link KnowledgeRetriever#defaultFolder()}.
+     */
+    public static String resolveKnowledgeFolder(String storedOrUiFolder) {
+        String p = System.getProperty(PROP_KNOWLEDGE_FOLDER);
+        if (p != null && !p.trim().isEmpty()) {
+            return p.trim();
+        }
+        if (storedOrUiFolder != null && !storedOrUiFolder.trim().isEmpty()) {
+            return storedOrUiFolder.trim();
+        }
+        return KnowledgeRetriever.defaultFolder();
+    }
+
+    public static int resolveKnowledgeMaxChars(int storedOrDefault) {
+        String p = System.getProperty(PROP_KNOWLEDGE_MAX_CHARS);
+        if (p != null && !p.trim().isEmpty()) {
+            return parsePositiveInt(p, KnowledgeRetriever.DEFAULT_MAX_CHARS, 40_000);
+        }
+        if (storedOrDefault >= 500) {
+            return Math.min(storedOrDefault, 40_000);
+        }
+        return KnowledgeRetriever.DEFAULT_MAX_CHARS;
     }
 
     /**
@@ -181,48 +218,7 @@ public final class LlmContextConfig {
      * proxy on 443 keeps working.
      */
     public static String normalizeOllamaBaseUrl(String raw) {
-        if (raw == null || raw.trim().isEmpty()) {
-            return OllamaClient.DEFAULT_BASE_URL;
-        }
-        String s = raw.trim();
-        while (s.endsWith("/") && s.length() > 1) {
-            s = s.substring(0, s.length() - 1);
-        }
-        if (!s.contains("://")) {
-            s = "http://" + s;
-        }
-        try {
-            URL u = new URL(s);
-            String host = u.getHost();
-            if (host == null || host.isEmpty()) {
-                return OllamaClient.DEFAULT_BASE_URL;
-            }
-            String protocol = u.getProtocol();
-            int port = u.getPort();
-            if (port == -1 && "http".equalsIgnoreCase(protocol)) {
-                port = OllamaClient.DEFAULT_PORT;
-            }
-            StringBuilder out = new StringBuilder();
-            out.append(protocol).append("://");
-            if (host.indexOf(':') >= 0 && !host.startsWith("[")) {
-                out.append('[').append(host).append(']');
-            } else {
-                out.append(host);
-            }
-            if (port != -1) {
-                out.append(':').append(port);
-            }
-            String path = u.getPath();
-            if (path != null && !path.isEmpty() && !"/".equals(path)) {
-                if (path.endsWith("/")) {
-                    path = path.substring(0, path.length() - 1);
-                }
-                out.append(path);
-            }
-            return out.toString();
-        } catch (MalformedURLException e) {
-            return OllamaClient.DEFAULT_BASE_URL;
-        }
+        return OllamaEndpoint.normalizeOrDefault(raw);
     }
 
     /**

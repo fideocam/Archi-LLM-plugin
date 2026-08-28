@@ -28,6 +28,12 @@ public final class ChunkAnalysisPrompt {
      */
     public static String buildChunkUserMessage(String modelDigest, String chunkTitle, String xmlExcerpt,
             int excerptIndex1, int totalExcerpts, String selectionContext, String prompt) {
+        return buildChunkUserMessage(modelDigest, chunkTitle, xmlExcerpt, excerptIndex1, totalExcerpts,
+                selectionContext, prompt, null);
+    }
+
+    public static String buildChunkUserMessage(String modelDigest, String chunkTitle, String xmlExcerpt,
+            int excerptIndex1, int totalExcerpts, String selectionContext, String prompt, String knowledge) {
         StringBuilder sb = new StringBuilder();
         if (modelDigest != null && !modelDigest.isEmpty()) {
             sb.append(modelDigest.trim()).append("\n\n---\n\n");
@@ -39,6 +45,9 @@ public final class ChunkAnalysisPrompt {
         }
         sb.append("\nArchiMate model (Open Exchange XML):\n\n").append(xmlExcerpt != null ? xmlExcerpt : "")
                 .append("\n\n--- END OF MODEL EXCERPT ---\n\n");
+        if (knowledge != null && !knowledge.trim().isEmpty()) {
+            sb.append(knowledge.trim()).append("\n\n");
+        }
         sb.append("User request: ").append(prompt != null ? prompt : "").append("\n\n");
         if (selectionContext != null && !selectionContext.isEmpty()) {
             sb.append(selectionContext);
