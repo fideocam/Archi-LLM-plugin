@@ -19,6 +19,8 @@ public class LlmContextConfigTest {
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP);
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_MODEL);
         System.clearProperty(LlmContextConfig.PROP_OLLAMA_BASE_URL);
+        System.clearProperty(LlmContextConfig.PROP_KNOWLEDGE_FOLDER);
+        System.clearProperty(LlmContextConfig.PROP_KNOWLEDGE_MAX_CHARS);
     }
 
     @Test
@@ -84,6 +86,26 @@ public class LlmContextConfigTest {
     @Test
     public void normalizeOllamaBaseUrl_ipv6KeepsBrackets() {
         assertEquals("http://[::1]:11434", LlmContextConfig.normalizeOllamaBaseUrl("http://[::1]:11434"));
+    }
+
+    @Test
+    public void normalizeOllamaBaseUrl_rejectsMetadataAndFile() {
+        assertEquals(OllamaClient.DEFAULT_BASE_URL, LlmContextConfig.normalizeOllamaBaseUrl("file:///etc/passwd"));
+        assertEquals(OllamaClient.DEFAULT_BASE_URL, LlmContextConfig.normalizeOllamaBaseUrl("http://169.254.169.254/"));
+        assertEquals(OllamaClient.DEFAULT_BASE_URL, LlmContextConfig.normalizeOllamaBaseUrl("http://user:secret@localhost:11434"));
+    }
+
+    @Test
+    public void resolveKnowledgeFolder_propertyOverrides() {
+        System.setProperty(LlmContextConfig.PROP_KNOWLEDGE_FOLDER, "/tmp/corp-knowledge");
+        assertEquals("/tmp/corp-knowledge", LlmContextConfig.resolveKnowledgeFolder("/ignored"));
+        assertTrue(LlmContextConfig.hasExplicitKnowledgeFolder());
+    }
+
+    @Test
+    public void resolveKnowledgeMaxChars_clamped() {
+        System.setProperty(LlmContextConfig.PROP_KNOWLEDGE_MAX_CHARS, "999999");
+        assertEquals(40_000, LlmContextConfig.resolveKnowledgeMaxChars(8000));
     }
 
     @Test
