@@ -1,3 +1,5 @@
+
+
 # Archi-LLM-plugin
 
 Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) with an LLM so you can extend and analyze your model using natural language. This repo provides the **ArchiGPT** plugin.
@@ -79,7 +81,7 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
 
 ## Building from source
 
-If you want to build the plugin yourself (Maven, Eclipse, or Ant), see **[docs/build.md](docs/build.md)**. With a sibling clone at `../archi` and its product built, run **`scripts/mvn-with-archi.sh clean package`** from the repo root.
+If you want to build the plugin yourself (Maven, Eclipse, or Ant), see **[docs/BUILD.md](docs/BUILD.md)**. With a sibling clone at `../archi` and its product built, run **`scripts/mvn-with-archi.sh clean package`** from the repo root.
 
 ---
 
