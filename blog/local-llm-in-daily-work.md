@@ -1,6 +1,8 @@
-# The language model belongs inside the tool you already use
+# Stop being the copy-paste bridge
 
-I have now wired a local language model into Archi, Blender, Inkscape, Chrome, and Keynote. There is also Bondie, an iPhone app that talks to the same Ollama server from my pocket. None of that started as a product catalogue. It started from a simple irritation: the work lived in one window, the model lived in another, and I was the copy-paste bridge between them.
+The work is in one window. The model is in another. You are the paste.
+
+I have now wired a local language model into Archi, Blender, Inkscape, Chrome, and Keynote. There is also Bondie, an iPhone app that talks to the same Ollama server from my pocket. None of that started as a product catalogue. It started from that irritation: I was ferrying text between the chat and the file that actually mattered.
 
 That tax is easy to ignore until you notice how much of a workday it eats. You dump a model, a scene, a slide deck, or a form into a chat. You wait. You get prose back. Then you re-interpret that prose by hand into the tool that actually owns the file. Confidential architecture XML, a client illustration, or a CV has already left the building. And you never quite trusted the result, because the chat never saw the real selection, the real layers, or the real constraints of the host application.
 
