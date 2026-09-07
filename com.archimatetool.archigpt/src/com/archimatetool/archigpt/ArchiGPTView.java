@@ -10,10 +10,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -87,7 +89,17 @@ public class ArchiGPTView extends ViewPart {
     private Combo ollamaModelCombo;
     private Text ollamaBaseUrlText;
     private Button refreshOllamaModelsButton;
+    private Text contextSizeText;
+    private Label contextMaxLabel;
+    private Button useModelMaxButton;
     private String persistedOllamaModel;
+    /** Custom num_ctx while "Use model max" is unchecked. */
+    private int customNumCtx = LlmContextConfig.DEFAULT_OLLAMA_REPORTED_CTX_CAP;
+    /** Last /api/show context for the selected model (0 = unknown). */
+    private int lastReportedCtx;
+    private boolean updatingContextUi;
+    private final Map<String, Integer> reportedCtxCache = new HashMap<>();
+    private Job contextFetchJob;
     private Label buildLabel;
     private Label whatWasSentLabel;
     private Label xmlPreviewLabel;
@@ -233,7 +245,73 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
+        ollamaModelCombo.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                scheduleFetchReportedContext(0);
+            }
+        });
+        ollamaModelCombo.addModifyListener(e -> scheduleFetchReportedContext(400));
+
+        Composite contextRow = new Composite(mainComposite, SWT.NONE);
+        contextRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout contextRowLayout = new GridLayout(5, false);
+        contextRowLayout.marginWidth = 0;
+        contextRowLayout.marginHeight = 0;
+        contextRowLayout.horizontalSpacing = 8;
+        contextRow.setLayout(contextRowLayout);
+
+        Label contextLabel = new Label(contextRow, SWT.NONE);
+        contextLabel.setText("Context size:");
+        GridData contextLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        contextLabelData.widthHint = 100;
+        contextLabel.setLayoutData(contextLabelData);
+
+        contextSizeText = new Text(contextRow, SWT.BORDER);
+        GridData contextSizeData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        contextSizeData.widthHint = 80;
+        contextSizeText.setLayoutData(contextSizeData);
+        customNumCtx = ArchiGPTPreferences.getNumCtx();
+        contextSizeText.setText(Integer.toString(customNumCtx));
+        contextSizeText.setToolTipText("Tokens sent as Ollama num_ctx. Uncheck Use model max to type a smaller window.");
+        contextSizeText.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                persistNumCtxFromField();
+            }
+        });
+        contextSizeText.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) {
+                    persistNumCtxFromField();
+                }
+            }
+        });
+
+        Label tokensLabel = new Label(contextRow, SWT.NONE);
+        tokensLabel.setText("tokens");
+
+        contextMaxLabel = new Label(contextRow, SWT.NONE);
+        contextMaxLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        contextMaxLabel.setText("model max: …");
+
+        useModelMaxButton = new Button(contextRow, SWT.CHECK);
+        useModelMaxButton.setText("Use model max");
+        useModelMaxButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        useModelMaxButton.setToolTipText(
+                "Request this model's full context window from Ollama. Leave unchecked on laptops; large windows can be slow to allocate.");
+        useModelMaxButton.setSelection(ArchiGPTPreferences.isUseModelMaxCtx());
+        useModelMaxButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                onUseModelMaxToggled();
+            }
+        });
+        applyContextFieldEnabledState();
+
         scheduleRefreshOllamaModelList(true);
+        scheduleFetchReportedContext(0);
 
         Label promptLabel = new Label(mainComposite, SWT.NONE);
         promptLabel.setText("Prompt:");
@@ -350,7 +428,9 @@ public class ArchiGPTView extends ViewPart {
      * connection errors are ignored (used on view startup).
      */
     private void scheduleRefreshOllamaModelList(final boolean silent) {
+        reportedCtxCache.clear();
         if (LlmContextConfig.hasExplicitOllamaModel()) {
+            scheduleFetchReportedContext(0);
             return;
         }
         final String baseUrl = currentOllamaBaseUrl();
@@ -391,6 +471,7 @@ public class ArchiGPTView extends ViewPart {
                         } else if (!items.isEmpty()) {
                             ollamaModelCombo.select(0);
                         }
+                        scheduleFetchReportedContext(0);
                     });
                 } catch (IOException e) {
                     if (!silent) {
@@ -441,6 +522,190 @@ public class ArchiGPTView extends ViewPart {
         }
     }
 
+    private void onUseModelMaxToggled() {
+        boolean useMax = useModelMaxButton != null && !useModelMaxButton.isDisposed()
+                && useModelMaxButton.getSelection();
+        if (useMax) {
+            int parsed = parseContextSizeField();
+            if (parsed >= LlmContextConfig.OLLAMA_NUM_CTX_MIN) {
+                customNumCtx = Math.min(parsed, LlmContextConfig.OLLAMA_NUM_CTX_MAX);
+                try {
+                    ArchiGPTPreferences.setNumCtx(customNumCtx);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        try {
+            ArchiGPTPreferences.setUseModelMaxCtx(useMax);
+        } catch (Exception ignored) {
+        }
+        applyContextFieldEnabledState();
+        updatingContextUi = true;
+        try {
+            if (useMax) {
+                if (lastReportedCtx >= LlmContextConfig.OLLAMA_NUM_CTX_MIN && contextSizeText != null
+                        && !contextSizeText.isDisposed()) {
+                    contextSizeText.setText(Integer.toString(lastReportedCtx));
+                } else {
+                    scheduleFetchReportedContext(0);
+                }
+            } else if (contextSizeText != null && !contextSizeText.isDisposed()) {
+                contextSizeText.setText(Integer.toString(customNumCtx));
+            }
+        } finally {
+            updatingContextUi = false;
+        }
+    }
+
+    private void applyContextFieldEnabledState() {
+        boolean jvmOverride = LlmContextConfig.hasExplicitOllamaNumCtx();
+        if (useModelMaxButton != null && !useModelMaxButton.isDisposed()) {
+            useModelMaxButton.setEnabled(!jvmOverride);
+        }
+        if (contextSizeText == null || contextSizeText.isDisposed()) {
+            return;
+        }
+        boolean useMax = useModelMaxButton != null && !useModelMaxButton.isDisposed()
+                && useModelMaxButton.getSelection();
+        contextSizeText.setEnabled(!jvmOverride && !useMax);
+        if (jvmOverride) {
+            updatingContextUi = true;
+            try {
+                contextSizeText.setText(Integer.toString(LlmContextConfig.ollamaNumCtx()));
+            } finally {
+                updatingContextUi = false;
+            }
+            contextSizeText.setToolTipText("Context size is fixed by -D" + LlmContextConfig.PROP_OLLAMA_NUM_CTX + "="
+                    + System.getProperty(LlmContextConfig.PROP_OLLAMA_NUM_CTX).trim());
+        } else {
+            contextSizeText.setToolTipText(
+                    "Tokens sent as Ollama num_ctx. Uncheck Use model max to type a smaller window.");
+        }
+    }
+
+    private void persistNumCtxFromField() {
+        if (LlmContextConfig.hasExplicitOllamaNumCtx()) {
+            return;
+        }
+        if (useModelMaxButton != null && !useModelMaxButton.isDisposed() && useModelMaxButton.getSelection()) {
+            return;
+        }
+        if (contextSizeText == null || contextSizeText.isDisposed() || updatingContextUi) {
+            return;
+        }
+        int parsed = parseContextSizeField();
+        if (parsed < LlmContextConfig.OLLAMA_NUM_CTX_MIN) {
+            parsed = customNumCtx;
+        }
+        customNumCtx = Math.min(parsed, LlmContextConfig.OLLAMA_NUM_CTX_MAX);
+        updatingContextUi = true;
+        try {
+            contextSizeText.setText(Integer.toString(customNumCtx));
+        } finally {
+            updatingContextUi = false;
+        }
+        try {
+            ArchiGPTPreferences.setNumCtx(customNumCtx);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private int parseContextSizeField() {
+        if (contextSizeText == null || contextSizeText.isDisposed()) {
+            return customNumCtx;
+        }
+        try {
+            return Integer.parseInt(contextSizeText.getText().trim());
+        } catch (NumberFormatException e) {
+            return customNumCtx;
+        }
+    }
+
+    private boolean isUseModelMaxSelected() {
+        return useModelMaxButton != null && !useModelMaxButton.isDisposed() && useModelMaxButton.getSelection();
+    }
+
+    /**
+     * Asks Ollama {@code /api/show} for the selected model's maximum context and updates the view.
+     */
+    private void scheduleFetchReportedContext(int delayMs) {
+        if (Display.getCurrent() == null) {
+            Display.getDefault().asyncExec(() -> scheduleFetchReportedContext(delayMs));
+            return;
+        }
+        if (ollamaModelCombo == null || ollamaModelCombo.isDisposed()) {
+            return;
+        }
+        final String baseUrl = currentOllamaBaseUrl();
+        final String model = LlmContextConfig.resolveOllamaModel(ollamaModelCombo.getText());
+        final String cacheKey = baseUrl + "\0" + model;
+        Integer cached = reportedCtxCache.get(cacheKey);
+        if (cached != null) {
+            applyReportedContext(cached.intValue());
+            return;
+        }
+        if (contextFetchJob != null) {
+            contextFetchJob.cancel();
+        }
+        if (contextMaxLabel != null && !contextMaxLabel.isDisposed()) {
+            contextMaxLabel.setText("model max: …");
+        }
+        Job job = new Job("ArchiGPT – model context") {
+            @Override
+            protected IStatus run(IProgressMonitor monitor) {
+                if (monitor.isCanceled()) {
+                    return Status.CANCEL_STATUS;
+                }
+                int reported = 0;
+                try {
+                    reported = new OllamaClient(baseUrl, model).fetchReportedContextTokens();
+                } catch (IOException ignored) {
+                }
+                if (monitor.isCanceled()) {
+                    return Status.CANCEL_STATUS;
+                }
+                final int reportedFinal = reported;
+                Display.getDefault().asyncExec(() -> {
+                    if (ollamaModelCombo == null || ollamaModelCombo.isDisposed()) {
+                        return;
+                    }
+                    String currentModel = LlmContextConfig.resolveOllamaModel(ollamaModelCombo.getText());
+                    if (!model.equals(currentModel) || !baseUrl.equals(currentOllamaBaseUrl())) {
+                        return;
+                    }
+                    if (reportedFinal >= LlmContextConfig.OLLAMA_NUM_CTX_MIN) {
+                        reportedCtxCache.put(cacheKey, Integer.valueOf(reportedFinal));
+                    }
+                    applyReportedContext(reportedFinal);
+                });
+                return Status.OK_STATUS;
+            }
+        };
+        job.setSystem(true);
+        contextFetchJob = job;
+        job.schedule(Math.max(0, delayMs));
+    }
+
+    private void applyReportedContext(int reported) {
+        lastReportedCtx = reported;
+        if (contextMaxLabel != null && !contextMaxLabel.isDisposed()) {
+            if (reported >= LlmContextConfig.OLLAMA_NUM_CTX_MIN) {
+                contextMaxLabel.setText("model max: " + reported);
+            } else {
+                contextMaxLabel.setText("model max: unknown");
+            }
+        }
+        if (isUseModelMaxSelected() && reported >= LlmContextConfig.OLLAMA_NUM_CTX_MIN
+                && contextSizeText != null && !contextSizeText.isDisposed()) {
+            updatingContextUi = true;
+            try {
+                contextSizeText.setText(Integer.toString(reported));
+            } finally {
+                updatingContextUi = false;
+            }
+        }
+    }
+
     private void openOllamaSettings() {
         persistOllamaBaseUrlFromField();
         org.eclipse.swt.widgets.Shell shell = getViewSite() != null ? getViewSite().getShell() : null;
@@ -450,10 +715,15 @@ public class ArchiGPTView extends ViewPart {
             ollamaBaseUrlText.setText(ArchiGPTPreferences.getBaseUrl());
         }
         scheduleRefreshOllamaModelList(true);
+        scheduleFetchReportedContext(0);
     }
 
     @Override
     public void dispose() {
+        if (contextFetchJob != null) {
+            contextFetchJob.cancel();
+            contextFetchJob = null;
+        }
         if (selectionListener != null && getViewSite() != null && getViewSite().getPage() != null) {
             getViewSite().getPage().removeSelectionListener(selectionListener);
             selectionListener = null;
@@ -873,15 +1143,19 @@ public class ArchiGPTView extends ViewPart {
         final String ollamaModelResolved = LlmContextConfig.resolveOllamaModel(
                 ollamaModelCombo != null && !ollamaModelCombo.isDisposed() ? ollamaModelCombo.getText() : "");
         persistOllamaBaseUrlFromField();
+        persistNumCtxFromField();
         final String ollamaBaseUrlResolved = currentOllamaBaseUrl();
 
         // Discover Ollama context (POST /api/show) unless -Darchigpt.ollamaNumCtx is set; size XML to leave reply headroom
-        int reportedOllamaCtx = 0;
+        int reportedOllamaCtx = lastReportedCtx;
         try {
             reportedOllamaCtx = new OllamaClient(ollamaBaseUrlResolved, ollamaModelResolved).fetchReportedContextTokens();
+            lastReportedCtx = reportedOllamaCtx;
         } catch (IOException ignored) {
         }
-        final int numCtxForOllama = LlmContextConfig.resolveOllamaNumCtx(reportedOllamaCtx);
+        final boolean useModelMax = isUseModelMaxSelected();
+        final int uiNumCtx = parseContextSizeField();
+        final int numCtxForOllama = LlmContextConfig.resolveOllamaNumCtx(reportedOllamaCtx, uiNumCtx, useModelMax);
         int overheadEstimate = UserMessageBuilder.estimateNonXmlOverheadChars(selectionContextFinal, promptFinal);
         final int maxXmlChars = LlmContextConfig.resolveMaxXmlChars(numCtxForOllama,
                 ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), overheadEstimate);
@@ -989,12 +1263,17 @@ public class ArchiGPTView extends ViewPart {
             summary.append("/api/show reports ").append(reportedOllamaCtx).append(" max context tokens; requesting num_ctx=")
                     .append(numCtxForOllama);
             if (reportedOllamaCtx > numCtxForOllama) {
-                summary.append(" (capped for speed; raise -D").append(LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP)
-                        .append(" or set -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(" to use more)");
+                if (useModelMax) {
+                    summary.append(" (clamped to ArchiGPT maximum of ").append(LlmContextConfig.OLLAMA_NUM_CTX_MAX)
+                            .append(")");
+                } else {
+                    summary.append(" (below model max; enable Use model max or type a larger Context size)");
+                }
             }
         } else {
             summary.append("could not read context from /api/show; using num_ctx=").append(numCtxForOllama)
-                    .append(" (capped default; set -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX).append(" to override)");
+                    .append(" (set Context size in the view, or -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX)
+                    .append(" to override)");
         }
         summary.append(". Max model XML chars=").append(maxXmlChars);
         if (LlmContextConfig.hasExplicitMaxXmlChars()) {

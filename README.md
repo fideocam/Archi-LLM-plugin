@@ -49,6 +49,7 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
   - *"Remove this element from the diagram"*
 - **Send** — Press **Enter** (or click **Ask ArchiGPT**). Use **Shift+Enter** for a new line. Click **Stop ArchiGPT** to cancel a request.
 - **Ollama server** — The view shows the Ollama URL (default `http://localhost:11434`). Change it to a LAN address and click **Settings…** (or **ArchiGPT → ArchiGPT Preferences…**) to test the connection. Then use **Refresh list** to load models from that server.
+- **Context size** — Next to the model list, ArchiGPT asks Ollama (`POST /api/show`) for each model's maximum context and shows it as **model max**. Requests default to 32 768 tokens so smaller machines stay responsive. Check **Use model max** to send that model's full window (what you want on a large GPU server), or type a custom token count.
 - **Result** — The LLM reply appears in the response area. If you asked to add or change the model, the plugin applies the changes and reports what was added or removed.
 
 **Selection matters:** If you select a folder, a diagram, or an element in Archi before asking, the plugin sends that context to the LLM (e.g. “add to this diagram”, “remove this element”).

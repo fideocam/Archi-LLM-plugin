@@ -57,6 +57,8 @@ public class ArchiGPTPreferencePage extends PreferencePage implements IWorkbench
                 + "To use Ollama on another computer on the LAN, enter its address, for example "
                 + "http://192.168.1.10:11434 or just 192.168.1.10. "
                 + "That host must listen on the network (e.g. OLLAMA_HOST=0.0.0.0).\n\n"
+                + "Context size (num_ctx) is set in the ArchiGPT view next to the model list. "
+                + "Check Use model max to request each model's full window from Ollama.\n\n"
                 + "You can also set -D" + LlmContextConfig.PROP_OLLAMA_BASE_URL
                 + " in Archi.ini (vmargs); that overrides this field.");
 
