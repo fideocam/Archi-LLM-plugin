@@ -130,4 +130,28 @@ public class OllamaClientTest {
         assertEquals("/api/show", lastRequestPath);
         assertTrue(lastRequestBody != null && lastRequestBody.contains("mymodel"));
     }
+
+    @Test
+    public void fetchReportedContextTokens_httpErrorReturnsZero() throws IOException {
+        responseCode = 400;
+        responseBody = "{\"error\":\"unknown model\"}";
+        OllamaClient client = new OllamaClient(baseUrl(), "missing");
+        assertEquals(0, client.fetchReportedContextTokens());
+        assertEquals("/api/show", lastRequestPath);
+    }
+
+    @Test
+    public void generateWithSystemPrompt_includesNumCtxOption() throws IOException {
+        OllamaClient client = new OllamaClient(baseUrl(), "llama3.2");
+        client.generateWithSystemPrompt("Sys", "User", null, 131072);
+        assertEquals("/api/chat", lastRequestPath);
+        assertTrue(lastRequestBody.contains("\"num_ctx\":131072"));
+    }
+
+    @Test
+    public void generateWithSystemPrompt_omitsNumCtxWhenNotRequested() throws IOException {
+        OllamaClient client = new OllamaClient(baseUrl(), "llama3.2");
+        client.generateWithSystemPrompt("Sys", "User");
+        assertFalse(lastRequestBody.contains("num_ctx"));
+    }
 }

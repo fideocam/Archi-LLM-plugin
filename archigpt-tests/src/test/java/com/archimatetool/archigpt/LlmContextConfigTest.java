@@ -191,6 +191,32 @@ public class LlmContextConfigTest {
     }
 
     @Test
+    public void resolveOllamaNumCtx_useModelMaxFallsBackToUiWhenShowMissing() {
+        assertEquals(65_536, LlmContextConfig.resolveOllamaNumCtx(0, 65_536, true));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_useModelMaxFallsBackToDefaultWhenShowAndUiMissing() {
+        assertEquals(LlmContextConfig.DEFAULT_NUM_CTX, LlmContextConfig.resolveOllamaNumCtx(0, 0, true));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_customDefaultCapStillUsedWhenBelowReported() {
+        assertEquals(LlmContextConfig.DEFAULT_OLLAMA_REPORTED_CTX_CAP,
+                LlmContextConfig.resolveOllamaNumCtx(131_072, LlmContextConfig.DEFAULT_OLLAMA_REPORTED_CTX_CAP, false));
+    }
+
+    @Test
+    public void ollamaReadTimeout_scalesAt64k() {
+        assertEquals(240_000, LlmContextConfig.resolveOllamaReadTimeoutMs(65_536));
+    }
+
+    @Test
+    public void ollamaReadTimeout_ceilingAtHugeNumCtx() {
+        assertEquals(7_200_000, LlmContextConfig.resolveOllamaReadTimeoutMs(LlmContextConfig.OLLAMA_NUM_CTX_MAX));
+    }
+
+    @Test
     public void contextPerformanceWarning_emptyForSmallPayload() {
         assertEquals("", LlmContextConfig.contextPerformanceWarning(1000, 1000, 2000, 5000, 65_536));
     }

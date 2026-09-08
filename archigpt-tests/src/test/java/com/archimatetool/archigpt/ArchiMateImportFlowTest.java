@@ -269,4 +269,153 @@ public class ArchiMateImportFlowTest {
         assertTrue("Open view should show a relationship arrow between the new figures, not only store it in the model",
                 connectionCount >= 1);
     }
+
+    @Test
+    public void importRelationshipOntoExistingFigures_drawsArrowWithoutAddingNodes() throws Exception {
+        String json = "{\"elements\":[],\"relationships\":["
+                + "{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1 + "\",\"target\":\"" + E2 + "\",\"name\":\"\",\"id\":\"" + R1 + "\"}"
+                + "]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object actor1 = addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        Object actor2 = addNamedConcept(factory, model, "createBusinessRole", "Buyer", E2);
+        Object diagram = addEmptyDiagram(factory, model, "Open View");
+        addFigure(factory, diagram, actor1);
+        addFigure(factory, diagram, actor2);
+        assertEquals(2, childCount(diagram));
+        assertEquals(0, sourceConnectionCount(diagram));
+
+        importWithDiagram(parsed, model, diagram);
+
+        assertEquals("Relationship-only import should not add extra figures", 2, childCount(diagram));
+        assertTrue("Both existing figures should be joined by an arrow", sourceConnectionCount(diagram) >= 1);
+    }
+
+    @Test
+    public void importNewViewWithEmptyConnections_stillDrawsRelationshipArrows() throws Exception {
+        String json = "{\"elements\":["
+                + "{\"type\":\"BusinessActor\",\"name\":\"Customer\",\"id\":\"" + E1 + "\"},"
+                + "{\"type\":\"BusinessRole\",\"name\":\"Buyer\",\"id\":\"" + E2 + "\"}"
+                + "],\"relationships\":["
+                + "{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1 + "\",\"target\":\"" + E2 + "\",\"name\":\"\",\"id\":\"" + R1 + "\"}"
+                + "],\"diagram\":{\"name\":\"Arrows View\",\"viewpoint\":\"\",\"nodes\":["
+                + "{\"elementId\":\"" + E1 + "\",\"x\":50,\"y\":50,\"width\":120,\"height\":55},"
+                + "{\"elementId\":\"" + E2 + "\",\"x\":220,\"y\":50,\"width\":120,\"height\":55}"
+                + "],\"connections\":[]}}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+
+        Object factory = factory();
+        Object model = createModel(factory);
+        importWithDiagram(parsed, model, null);
+
+        Object diagram = findDiagramByName(model, "Arrows View");
+        assertNotNull(diagram);
+        assertTrue("New view should contain both nodes", childCount(diagram) >= 2);
+        assertTrue("Omitted diagram.connections should still get relationship arrows", sourceConnectionCount(diagram) >= 1);
+    }
+
+    @Test
+    public void importRelationshipWhenOnlyOneEndOnDiagram_doesNotDrawArrow() throws Exception {
+        String json = "{\"elements\":[],\"relationships\":["
+                + "{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1 + "\",\"target\":\"" + E2 + "\",\"name\":\"\",\"id\":\"" + R1 + "\"}"
+                + "]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object actor1 = addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        addNamedConcept(factory, model, "createBusinessRole", "Buyer", E2);
+        Object diagram = addEmptyDiagram(factory, model, "Open View");
+        addFigure(factory, diagram, actor1);
+
+        importWithDiagram(parsed, model, diagram);
+
+        assertEquals("Missing-end import should not add the other figure", 1, childCount(diagram));
+        assertEquals("No arrow when only one end is on the view", 0, sourceConnectionCount(diagram));
+    }
+
+    private static Object factory() throws Exception {
+        return Class.forName("com.archimatetool.model.IArchimateFactory").getField("eINSTANCE").get(null);
+    }
+
+    private static Object createModel(Object factory) throws Exception {
+        Object model = factory.getClass().getMethod("createArchimateModel").invoke(factory);
+        model.getClass().getMethod("setDefaults").invoke(model);
+        return model;
+    }
+
+    private static void importWithDiagram(ArchiMateLLMResult parsed, Object model, Object diagram) throws Exception {
+        Method importMethod = ArchiMateLLMImporter.class.getMethod("importIntoModel", ArchiMateLLMResult.class,
+                Class.forName("com.archimatetool.model.IArchimateModel"), Class.forName("com.archimatetool.model.IFolder"),
+                Class.forName("com.archimatetool.model.IArchimateDiagramModel"));
+        importMethod.invoke(null, parsed, model, null, diagram);
+    }
+
+    private static Object addEmptyDiagram(Object factory, Object model, String name) throws Exception {
+        Object diagramsFolder = model.getClass().getMethod("getFolder", Class.forName("com.archimatetool.model.FolderType"))
+                .invoke(model, Class.forName("com.archimatetool.model.FolderType").getField("DIAGRAMS").get(null));
+        Object diagram = factory.getClass().getMethod("createArchimateDiagramModel").invoke(factory);
+        diagram.getClass().getMethod("setName", String.class).invoke(diagram, name);
+        @SuppressWarnings("unchecked")
+        java.util.List<Object> folderElements = (java.util.List<Object>) diagramsFolder.getClass().getMethod("getElements")
+                .invoke(diagramsFolder);
+        folderElements.add(diagram);
+        return diagram;
+    }
+
+    private static Object addNamedConcept(Object factory, Object model, String createMethod, String name, String id) throws Exception {
+        Object concept = factory.getClass().getMethod(createMethod).invoke(factory);
+        concept.getClass().getMethod("setName", String.class).invoke(concept, name);
+        concept.getClass().getMethod("setId", String.class).invoke(concept, id);
+        Object defaultFolder = model.getClass()
+                .getMethod("getDefaultFolderForObject", Class.forName("org.eclipse.emf.ecore.EObject"))
+                .invoke(model, concept);
+        @SuppressWarnings("unchecked")
+        java.util.List<Object> folderElements = (java.util.List<Object>) defaultFolder.getClass().getMethod("getElements")
+                .invoke(defaultFolder);
+        folderElements.add(concept);
+        return concept;
+    }
+
+    private static void addFigure(Object factory, Object diagram, Object element) throws Exception {
+        Object dmo = factory.getClass().getMethod("createDiagramModelArchimateObject").invoke(factory);
+        dmo.getClass().getMethod("setArchimateElement", Class.forName("com.archimatetool.model.IArchimateElement"))
+                .invoke(dmo, element);
+        dmo.getClass().getMethod("setBounds", int.class, int.class, int.class, int.class)
+                .invoke(dmo, 50, 50, 120, 55);
+        @SuppressWarnings("unchecked")
+        java.util.List<Object> children = (java.util.List<Object>) diagram.getClass().getMethod("getChildren").invoke(diagram);
+        children.add(dmo);
+    }
+
+    private static Object findDiagramByName(Object model, String expected) throws Exception {
+        Object diagramModels = model.getClass().getMethod("getDiagramModels").invoke(model);
+        for (Object dm : (Iterable<?>) diagramModels) {
+            Object name = dm.getClass().getMethod("getName").invoke(dm);
+            if (expected.equals(name != null ? name.toString() : null)) {
+                return dm;
+            }
+        }
+        return null;
+    }
+
+    private static int childCount(Object diagram) throws Exception {
+        return ((List<?>) diagram.getClass().getMethod("getChildren").invoke(diagram)).size();
+    }
+
+    private static int sourceConnectionCount(Object diagram) throws Exception {
+        int connectionCount = 0;
+        for (Object child : (List<?>) diagram.getClass().getMethod("getChildren").invoke(diagram)) {
+            Object sourceConns = child.getClass().getMethod("getSourceConnections").invoke(child);
+            if (sourceConns instanceof List) {
+                connectionCount += ((List<?>) sourceConns).size();
+            }
+        }
+        return connectionCount;
+    }
 }

@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -482,22 +481,14 @@ public class ArchiGPTView extends ViewPart {
                             keep = "";
                         }
                         keep = keep.trim();
-                        LinkedHashSet<String> merged = new LinkedHashSet<>();
-                        for (String n : names) {
-                            if (n != null && !n.trim().isEmpty()) {
-                                merged.add(n.trim());
-                            }
-                        }
-                        List<String> items = new ArrayList<>(merged);
-                        Collections.sort(items, String.CASE_INSENSITIVE_ORDER);
+                        List<String> items = OllamaModelList.fromServerNames(names);
                         ollamaModelCombo.setItems(items.toArray(new String[0]));
-                        int idx = indexOfModel(items, keep);
+                        String select = OllamaModelList.selectionAfterRefresh(items, keep);
+                        int idx = OllamaModelList.indexOfModel(items, select);
                         if (idx >= 0) {
                             ollamaModelCombo.select(idx);
-                        } else if (!items.isEmpty()) {
-                            ollamaModelCombo.select(0);
                         } else {
-                            ollamaModelCombo.setText("");
+                            ollamaModelCombo.setText(select);
                         }
                         scheduleFetchReportedContext(0);
                     });
@@ -525,26 +516,6 @@ public class ArchiGPTView extends ViewPart {
         };
         job.setSystem(true);
         job.schedule();
-    }
-
-    /**
-     * Index of {@code name} in a tags list. Prefers an exact match, then {@code name:latest}.
-     */
-    private static int indexOfModel(List<String> items, String name) {
-        if (items == null || name == null || name.isEmpty()) {
-            return -1;
-        }
-        int exact = items.indexOf(name);
-        if (exact >= 0) {
-            return exact;
-        }
-        String latest = name + ":latest";
-        for (int i = 0; i < items.size(); i++) {
-            if (latest.equalsIgnoreCase(items.get(i)) || name.equalsIgnoreCase(items.get(i))) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     private String currentOllamaBaseUrl() {
