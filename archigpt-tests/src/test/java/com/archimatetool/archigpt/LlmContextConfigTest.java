@@ -155,6 +155,19 @@ public class LlmContextConfigTest {
     }
 
     @Test
+    public void ollamaReadTimeout_scalesWithLargeNumCtx() {
+        assertEquals(480_000, LlmContextConfig.resolveOllamaReadTimeoutMs(131_072));
+        assertEquals(LlmContextConfig.DEFAULT_OLLAMA_READ_TIMEOUT_MS,
+                LlmContextConfig.resolveOllamaReadTimeoutMs(32_768));
+    }
+
+    @Test
+    public void ollamaReadTimeout_propertyWinsOverScaledNumCtx() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS, "0");
+        assertEquals(0, LlmContextConfig.resolveOllamaReadTimeoutMs(131_072));
+    }
+
+    @Test
     public void maxXmlChars_readsProperty() {
         System.setProperty(LlmContextConfig.PROP_MAX_XML_CHARS, "50000");
         assertEquals(50_000, LlmContextConfig.maxXmlChars());
@@ -167,9 +180,62 @@ public class LlmContextConfigTest {
     }
 
     @Test
-    public void ollamaNumCtx_clampedTo256k() {
-        System.setProperty(LlmContextConfig.PROP_OLLAMA_NUM_CTX, "999999");
+    public void ollamaNumCtx_clampedToHardMax() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_NUM_CTX, "99999999");
         assertEquals(LlmContextConfig.OLLAMA_NUM_CTX_MAX, LlmContextConfig.ollamaNumCtx());
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_useModelMaxSkips32kCap() {
+        assertEquals(131_072, LlmContextConfig.resolveOllamaNumCtx(131_072, 32_768, true));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_useModelMaxClampsToHardMax() {
+        assertEquals(LlmContextConfig.OLLAMA_NUM_CTX_MAX,
+                LlmContextConfig.resolveOllamaNumCtx(LlmContextConfig.OLLAMA_NUM_CTX_MAX + 4096, 0, true));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_customUiValueUsedWhenBelowReported() {
+        assertEquals(65_536, LlmContextConfig.resolveOllamaNumCtx(131_072, 65_536, false));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_customUiCappedToReported() {
+        assertEquals(8192, LlmContextConfig.resolveOllamaNumCtx(8192, 65_536, false));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_explicitPropertyWinsOverUseModelMax() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_NUM_CTX, "4096");
+        assertEquals(4096, LlmContextConfig.resolveOllamaNumCtx(131_072, 65_536, true));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_useModelMaxFallsBackToUiWhenShowMissing() {
+        assertEquals(65_536, LlmContextConfig.resolveOllamaNumCtx(0, 65_536, true));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_useModelMaxFallsBackToDefaultWhenShowAndUiMissing() {
+        assertEquals(LlmContextConfig.DEFAULT_NUM_CTX, LlmContextConfig.resolveOllamaNumCtx(0, 0, true));
+    }
+
+    @Test
+    public void resolveOllamaNumCtx_customDefaultCapStillUsedWhenBelowReported() {
+        assertEquals(LlmContextConfig.DEFAULT_OLLAMA_REPORTED_CTX_CAP,
+                LlmContextConfig.resolveOllamaNumCtx(131_072, LlmContextConfig.DEFAULT_OLLAMA_REPORTED_CTX_CAP, false));
+    }
+
+    @Test
+    public void ollamaReadTimeout_scalesAt64k() {
+        assertEquals(240_000, LlmContextConfig.resolveOllamaReadTimeoutMs(65_536));
+    }
+
+    @Test
+    public void ollamaReadTimeout_ceilingAtHugeNumCtx() {
+        assertEquals(7_200_000, LlmContextConfig.resolveOllamaReadTimeoutMs(LlmContextConfig.OLLAMA_NUM_CTX_MAX));
     }
 
     @Test

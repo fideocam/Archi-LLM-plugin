@@ -181,7 +181,7 @@ public class OllamaClient {
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setDoOutput(true);
             conn.setConnectTimeout(5000);
-            conn.setReadTimeout(LlmContextConfig.resolveOllamaReadTimeoutMs());
+            conn.setReadTimeout(LlmContextConfig.resolveOllamaReadTimeoutMs(numCtx));
 
             try (OutputStream os = conn.getOutputStream()) {
                 byte[] bytes = requestBody.getBytes(StandardCharsets.UTF_8);

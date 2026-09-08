@@ -27,5 +27,12 @@ public class OllamaShowResponseParserTest {
     @Test
     public void emptyReturnsZero() {
         assertEquals(0, OllamaShowResponseParser.parseContextTokens(""));
+        assertEquals(0, OllamaShowResponseParser.parseContextTokens(null));
+    }
+
+    @Test
+    public void prefersArchitectureContextLengthOverModelfileNumCtx() {
+        String json = "{\"parameters\":\"stop [\\\"</s>\\\"]\nnum_ctx 4096\n\",\"model_info\":{\"llama.context_length\":131072,\"general.architecture\":\"llama\"}}";
+        assertEquals(131072, OllamaShowResponseParser.parseContextTokens(json));
     }
 }

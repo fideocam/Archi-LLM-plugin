@@ -196,7 +196,8 @@ public final class ArchiMateLLMResultParser {
             int end = findMatchingBracket(s, i);
             if (end <= i) continue;
             String candidate = s.substring(i, end + 1);
-            // Must be the CHANGES payload: mutation key followed by array/object, not the word "elements" in prose
+            // Mutation key followed by array/object — not the word "elements" in analysis prose.
+            // Covers adds, new views, and remove-only payloads (including remove-from-diagram).
             if (CHANGES_KEY.matcher(candidate).find()) {
                 return candidate;
             }

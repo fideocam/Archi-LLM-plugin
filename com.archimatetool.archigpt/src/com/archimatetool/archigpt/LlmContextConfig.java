@@ -9,10 +9,10 @@ package com.archimatetool.archigpt;
  * JVM system properties (e.g. in Archi.ini <code>-vmargs</code>):
  * <ul>
  *   <li>{@value #PROP_MAX_XML_CHARS} — max characters of Open Exchange XML (optional). If unset, a budget is computed from Ollama {@code num_ctx} minus system prompt, wrappers, and a reply reserve.</li>
- *   <li>{@value #PROP_OLLAMA_NUM_CTX} — Ollama {@code num_ctx} (optional). If unset, ArchiGPT uses {@code POST /api/show} but clamps the reported value to {@value #DEFAULT_OLLAMA_REPORTED_CTX_CAP} (see {@value #PROP_OLLAMA_REPORTED_CTX_CAP}): the model's <em>maximum</em> context is often 128k+ and requesting that for every call can make Ollama appear hung (slow allocation / CPU) even for small prompts.</li>
+ *   <li>{@value #PROP_OLLAMA_NUM_CTX} — Ollama {@code num_ctx} (optional). When set, overrides the ArchiGPT view context field. If unset, the view uses {@code POST /api/show} for the model's maximum; the default request size is still clamped to {@value #DEFAULT_OLLAMA_REPORTED_CTX_CAP} unless <em>Use model max</em> is checked or a custom size is typed (see {@value #PROP_OLLAMA_REPORTED_CTX_CAP}).</li>
  *   <li>{@value #PROP_CHUNKED_ANALYSIS} — set {@code false} to disable multi-request plain-text analysis for huge models.</li>
  *   <li>{@value #PROP_SEMANTIC_CHUNKED_ANALYSIS} — set {@code false} to use plain string-split chunks instead of folder/view-based chunks.</li>
- *   <li>{@value #PROP_OLLAMA_READ_TIMEOUT_MS} — max milliseconds to wait for Ollama to finish one chat/generate response (default {@value #DEFAULT_OLLAMA_READ_TIMEOUT_MS}). Use {@code 0} for no read timeout. If you see {@code Read timed out}, try lowering {@value #PROP_OLLAMA_REPORTED_CTX_CAP} or setting an explicit {@value #PROP_OLLAMA_NUM_CTX} before raising the timeout.</li>
+ *   <li>{@value #PROP_OLLAMA_READ_TIMEOUT_MS} — max milliseconds to wait for Ollama to finish one chat/generate response. If unset, ArchiGPT uses {@value #DEFAULT_OLLAMA_READ_TIMEOUT_MS} and scales up with {@code num_ctx} (capped at two hours). Use {@code 0} for no read timeout.</li>
  *   <li>{@value #PROP_OLLAMA_MODEL} — Ollama model name (optional). When set, overrides the model chosen in the ArchiGPT view dropdown.</li>
  *   <li>{@value #PROP_OLLAMA_BASE_URL} — Ollama API base URL (optional). When set, overrides the server URL in the ArchiGPT view and preferences (e.g. {@code http://192.168.1.10:11434}).</li>
  *   <li>{@value #PROP_KNOWLEDGE_FOLDER} — directory of Markdown/text/CSV files injected as COMPANY KNOWLEDGE (optional). When set, overrides the preference store.</li>
@@ -82,10 +82,14 @@ public final class LlmContextConfig {
      */
     public static final int DEFAULT_OLLAMA_REPORTED_CTX_CAP = 32_768;
 
+    /** Smallest {@code num_ctx} treated as a real value from {@code /api/show} or the view field. */
+    public static final int OLLAMA_NUM_CTX_MIN = 2048;
+
     /**
-     * Practical upper bound for Ollama {@code num_ctx} (256k tokens). Values above this are clamped.
+     * Hard ceiling for Ollama {@code num_ctx} (2M tokens). Values above this are clamped.
+     * The model's reported maximum from {@code /api/show} is used when the user opts in; this is only a safety bound.
      */
-    public static final int OLLAMA_NUM_CTX_MAX = 256 * 1024;
+    public static final int OLLAMA_NUM_CTX_MAX = 2 * 1024 * 1024;
 
     private static final int MAX_NUM_CTX = OLLAMA_NUM_CTX_MAX;
 
@@ -226,35 +230,82 @@ public final class LlmContextConfig {
      * {@code 0} = no read timeout. Invalid or negative values fall back to {@link #DEFAULT_OLLAMA_READ_TIMEOUT_MS}.
      */
     public static int resolveOllamaReadTimeoutMs() {
-        String raw = System.getProperty(PROP_OLLAMA_READ_TIMEOUT_MS);
-        if (raw == null || raw.trim().isEmpty()) {
-            return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
-        }
-        try {
-            int v = Integer.parseInt(raw.trim());
-            if (v < 0) {
-                return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
-            }
-            if (v == 0) {
-                return 0;
-            }
-            return Math.min(v, OLLAMA_READ_TIMEOUT_MS_CEILING);
-        } catch (NumberFormatException e) {
-            return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
-        }
+        return resolveOllamaReadTimeoutMs(0);
     }
 
     /**
-     * {@code num_ctx} for the next request: explicit {@link #PROP_OLLAMA_NUM_CTX} wins. Otherwise, when {@code /api/show}
-     * returns a context length, use {@code min(reported, ollamaReportedCtxCap())} — not the raw model maximum, which is often
-     * far larger than needed and can stall Ollama. If show fails, use {@code min}({@link #DEFAULT_NUM_CTX}, cap).
+     * Read timeout for a completion that requests {@code numCtx} tokens.
+     * An explicit {@link #PROP_OLLAMA_READ_TIMEOUT_MS} always wins (including {@code 0} = unlimited).
+     * Otherwise the default 2 minutes is scaled up with {@code num_ctx} so a 128k window is not cut off
+     * while Ollama allocates the KV cache.
+     */
+    public static int resolveOllamaReadTimeoutMs(int numCtx) {
+        String raw = System.getProperty(PROP_OLLAMA_READ_TIMEOUT_MS);
+        if (raw != null && !raw.trim().isEmpty()) {
+            try {
+                int v = Integer.parseInt(raw.trim());
+                if (v < 0) {
+                    return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
+                }
+                if (v == 0) {
+                    return 0;
+                }
+                return Math.min(v, OLLAMA_READ_TIMEOUT_MS_CEILING);
+            } catch (NumberFormatException e) {
+                return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
+            }
+        }
+        if (numCtx <= DEFAULT_OLLAMA_REPORTED_CTX_CAP) {
+            return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
+        }
+        long scaled = (long) numCtx * DEFAULT_OLLAMA_READ_TIMEOUT_MS / DEFAULT_OLLAMA_REPORTED_CTX_CAP;
+        if (scaled > OLLAMA_READ_TIMEOUT_MS_CEILING) {
+            return OLLAMA_READ_TIMEOUT_MS_CEILING;
+        }
+        return (int) Math.max(DEFAULT_OLLAMA_READ_TIMEOUT_MS, scaled);
+    }
+
+    /**
+     * {@code num_ctx} for the next request with no view overrides: explicit {@link #PROP_OLLAMA_NUM_CTX} wins.
+     * Otherwise, when {@code /api/show} returns a context length, use {@code min(reported, ollamaReportedCtxCap())} —
+     * not the raw model maximum, which is often far larger than needed and can stall Ollama. If show fails,
+     * use {@code min}({@link #DEFAULT_NUM_CTX}, cap).
      */
     public static int resolveOllamaNumCtx(int reportedByOllama) {
+        return resolveOllamaNumCtx(reportedByOllama, 0, false);
+    }
+
+    /**
+     * {@code num_ctx} for the next request.
+     * <ol>
+     *   <li>{@link #PROP_OLLAMA_NUM_CTX} always wins.</li>
+     *   <li>If {@code useModelMax} is true and Ollama reported a usable maximum, that value is used (clamped to
+     *       {@link #OLLAMA_NUM_CTX_MAX}) — the 32k laptop cap is skipped.</li>
+     *   <li>Else if {@code uiNumCtx} is a usable size, that value is used (not above the reported maximum when known).</li>
+     *   <li>Else the automatic {@link #ollamaReportedCtxCap()} path (default 32k).</li>
+     * </ol>
+     */
+    public static int resolveOllamaNumCtx(int reportedByOllama, int uiNumCtx, boolean useModelMax) {
         if (hasExplicitOllamaNumCtx()) {
             return ollamaNumCtx();
         }
+        if (useModelMax) {
+            if (reportedByOllama >= OLLAMA_NUM_CTX_MIN) {
+                return Math.min(reportedByOllama, MAX_NUM_CTX);
+            }
+            if (uiNumCtx >= OLLAMA_NUM_CTX_MIN) {
+                return Math.min(uiNumCtx, MAX_NUM_CTX);
+            }
+            return Math.min(DEFAULT_NUM_CTX, MAX_NUM_CTX);
+        }
+        if (uiNumCtx >= OLLAMA_NUM_CTX_MIN) {
+            if (reportedByOllama >= OLLAMA_NUM_CTX_MIN) {
+                return Math.min(Math.min(uiNumCtx, reportedByOllama), MAX_NUM_CTX);
+            }
+            return Math.min(uiNumCtx, MAX_NUM_CTX);
+        }
         int cap = ollamaReportedCtxCap();
-        if (reportedByOllama >= 2048) {
+        if (reportedByOllama >= OLLAMA_NUM_CTX_MIN) {
             return Math.min(Math.min(reportedByOllama, MAX_NUM_CTX), cap);
         }
         return Math.min(DEFAULT_NUM_CTX, cap);
@@ -320,15 +371,14 @@ public final class LlmContextConfig {
             w.append("Serialized model XML is about ").append(fullModelXmlChars)
                     .append(" characters (large); quality may depend on your num_ctx and model.\n");
         }
-        w.append("Long system + user text competes for Ollama's context (typically up to about ")
-                .append(OLLAMA_NUM_CTX_MAX / 1024).append("k tokens). ")
+        w.append("Long system + user text competes for Ollama's context window. ")
                 .append("Very large inputs can slow responses and leave little room for the reply.\n");
         w.append("This request uses num_ctx=").append(numCtxRequested)
                 .append(" (~").append(approxInputTokens).append(" tokens estimated for system + user message).\n");
-        w.append("Tune -D").append(PROP_MAX_XML_CHARS).append(", -D").append(PROP_OLLAMA_NUM_CTX).append(", and -D")
-                .append(PROP_OLLAMA_REPORTED_CTX_CAP)
-                .append(" in Archi.ini (vmargs) if needed; num_ctx above ").append(OLLAMA_NUM_CTX_MAX / 1024)
-                .append("k is not supported by Ollama.");
+        w.append("Tune the Context size field in the ArchiGPT view, or -D").append(PROP_MAX_XML_CHARS)
+                .append(" / -D").append(PROP_OLLAMA_NUM_CTX).append(" / -D").append(PROP_OLLAMA_REPORTED_CTX_CAP)
+                .append(" in Archi.ini (vmargs) if needed; ArchiGPT clamps num_ctx at ")
+                .append(OLLAMA_NUM_CTX_MAX).append(" tokens.");
         return w.toString();
     }
 
