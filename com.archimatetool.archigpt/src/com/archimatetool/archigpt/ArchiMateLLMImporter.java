@@ -29,7 +29,9 @@ import com.archimatetool.model.IArchimateFactory;
 import com.archimatetool.model.IArchimateModel;
 import com.archimatetool.model.IArchimatePackage;
 import com.archimatetool.model.IArchimateRelationship;
+import com.archimatetool.model.IConnectable;
 import com.archimatetool.model.IDiagramModel;
+import com.archimatetool.model.IDiagramModelArchimateConnection;
 import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IDiagramModelConnection;
 import com.archimatetool.model.IDiagramModelContainer;
@@ -82,8 +84,9 @@ public final class ArchiMateLLMImporter {
 
     /**
      * Import the validated result into the given model. When targetFolder is non-null, new elements
-     * and relationships are added to that folder. When targetDiagram is non-null, new elements are
-     * also added as figures to that diagram (e.g. the open or selected view).
+     * are added to that folder when its type matches. When targetDiagram is non-null, new elements
+     * are added as figures and new relationships as arrows when both ends already have (or just
+     * received) figures on that view.
      */
     public static void importIntoModel(ArchiMateLLMResult result, IArchimateModel model, IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
         CommandStack stack = getCommandStack(model);
@@ -114,6 +117,7 @@ public final class ArchiMateLLMImporter {
             IArchimateModel model, IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
         Map<String, IArchimateConcept> idToConcept = new HashMap<>();
         Map<String, IArchimateRelationship> idToRelationship = new HashMap<>();
+        Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures = new HashMap<>();
 
         int diagramY = 50;
         final int elementWidth = 120;
@@ -152,6 +156,7 @@ public final class ArchiMateLLMImporter {
                 dmo.setArchimateElement(element);
                 dmo.setBounds(50, diagramY, elementWidth, elementHeight);
                 compound.add(new AddDiagramObjectCommand(targetDiagram, dmo));
+                pendingFigures.put(element, dmo);
                 diagramY += elementHeight + gap;
             }
         }
@@ -184,7 +189,12 @@ public final class ArchiMateLLMImporter {
                 idToRelationship.put(r.getId().trim(), rel);
             }
             IFolder relFolder = model.getDefaultFolderForObject(rel);
+            rel.setSource(source);
+            rel.setTarget(target);
             compound.add(new AddRelationshipCommand(rel, source, target, relFolder));
+            if (targetDiagram != null && result.getDiagram() == null) {
+                appendRelationshipArrowCommand(compound, targetDiagram, source, target, rel, pendingFigures);
+            }
         }
 
         if (result.getDiagram() != null && result.getDiagram().getName() != null && !result.getDiagram().getName().isEmpty()) {
@@ -377,6 +387,7 @@ public final class ArchiMateLLMImporter {
             IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
         Map<String, IArchimateConcept> idToConcept = new HashMap<>();
         Map<String, IArchimateRelationship> idToRelationship = new HashMap<>();
+        Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures = new HashMap<>();
 
         int diagramY = 50;
         final int elementWidth = 120;
@@ -415,6 +426,7 @@ public final class ArchiMateLLMImporter {
                 dmo.setArchimateElement(element);
                 dmo.setBounds(50, diagramY, elementWidth, elementHeight);
                 targetDiagram.getChildren().add(dmo);
+                pendingFigures.put(element, dmo);
                 diagramY += elementHeight + gap;
             }
         }
@@ -451,6 +463,9 @@ public final class ArchiMateLLMImporter {
             IFolder relFolder = model.getDefaultFolderForObject(rel);
             if (relFolder != null) {
                 relFolder.getElements().add(rel);
+            }
+            if (targetDiagram != null && result.getDiagram() == null) {
+                addArchimateConnectionNow(targetDiagram, source, target, rel, pendingFigures);
             }
         }
 
@@ -512,38 +527,156 @@ public final class ArchiMateLLMImporter {
             IDiagramModelArchimateObject sourceDmo = elementIdToDiagramObject.get(connSpec.getSourceElementId());
             IDiagramModelArchimateObject targetDmo = elementIdToDiagramObject.get(connSpec.getTargetElementId());
             if (sourceDmo == null || targetDmo == null) continue;
-            IDiagramModelConnection conn = IArchimateFactory.eINSTANCE.createDiagramModelConnection();
-            conn.setSource(sourceDmo);
-            conn.setTarget(targetDmo);
+            IArchimateRelationship rel = null;
             if (connSpec.getRelationshipId() != null && !connSpec.getRelationshipId().isEmpty()) {
-                IArchimateRelationship rel = idToRelationship.get(connSpec.getRelationshipId());
-                if (rel == null) rel = (IArchimateRelationship) findConceptById(model, connSpec.getRelationshipId());
-                if (rel != null) setConnectionRelationship(conn, rel);
+                rel = idToRelationship.get(connSpec.getRelationshipId());
+                if (rel == null) {
+                    IArchimateConcept found = findConceptById(model, connSpec.getRelationshipId());
+                    if (found instanceof IArchimateRelationship) {
+                        rel = (IArchimateRelationship) found;
+                    }
+                }
             }
-            compound.add(new AddDiagramConnectionCommand(diagram, conn));
+            if (rel == null) continue;
+            compound.add(new AddArchimateDiagramConnectionCommand(sourceDmo, targetDmo, rel));
+        }
+        appendMissingRelationshipArrows(compound, diagram, idToRelationship, elementIdToDiagramObject);
+    }
+
+    /** Draw imported relationships that the LLM omitted from diagram.connections. */
+    private static void appendMissingRelationshipArrows(NonNotifyingCompoundCommand compound, IArchimateDiagramModel diagram,
+            Map<String, IArchimateRelationship> idToRelationship,
+            Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject) {
+        if (diagram == null || idToRelationship == null || idToRelationship.isEmpty()) {
+            return;
+        }
+        Map<IArchimateElement, IDiagramModelArchimateObject> byElement = new HashMap<>();
+        if (elementIdToDiagramObject != null) {
+            for (IDiagramModelArchimateObject dmo : elementIdToDiagramObject.values()) {
+                if (dmo != null && dmo.getArchimateElement() != null) {
+                    byElement.put(dmo.getArchimateElement(), dmo);
+                }
+            }
+        }
+        for (IArchimateRelationship rel : new java.util.LinkedHashSet<>(idToRelationship.values())) {
+            if (!(rel.getSource() instanceof IArchimateElement) || !(rel.getTarget() instanceof IArchimateElement)) {
+                continue;
+            }
+            appendRelationshipArrowCommand(compound, diagram, (IArchimateElement) rel.getSource(),
+                    (IArchimateElement) rel.getTarget(), rel, byElement);
         }
     }
 
-    /** Add diagram connection using the same storage Archi expects; undo removes it. */
-    private static final class AddDiagramConnectionCommand extends Command {
-        private final IArchimateDiagramModel diagram;
-        private final IDiagramModelConnection conn;
+    /** Add an ArchiMate relationship arrow between two figures; undo disconnects it. */
+    private static final class AddArchimateDiagramConnectionCommand extends Command {
+        private final IConnectable source;
+        private final IConnectable target;
+        private final IArchimateRelationship relationship;
+        private IDiagramModelArchimateConnection connection;
 
-        AddDiagramConnectionCommand(IArchimateDiagramModel diagram, IDiagramModelConnection conn) {
+        AddArchimateDiagramConnectionCommand(IConnectable source, IConnectable target, IArchimateRelationship relationship) {
             super("ArchiGPT: add diagram connection");
-            this.diagram = diagram;
-            this.conn = conn;
+            this.source = source;
+            this.target = target;
+            this.relationship = relationship;
         }
 
         @Override
         public void execute() {
-            addConnectionToDiagram(diagram, conn);
+            if (alreadyShowsRelationship(source, relationship)) {
+                return;
+            }
+            connection = IArchimateFactory.eINSTANCE.createDiagramModelArchimateConnection();
+            connection.setArchimateRelationship(relationship);
+            connection.connect(source, target);
         }
 
         @Override
         public void undo() {
-            removeConnectionFromDiagram(diagram, conn);
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
+
+        @Override
+        public void redo() {
+            if (connection != null) {
+                connection.reconnect();
+            }
+        }
+    }
+
+    private static void appendRelationshipArrowCommand(NonNotifyingCompoundCommand compound, IArchimateDiagramModel diagram,
+            IArchimateElement source, IArchimateElement target, IArchimateRelationship rel,
+            Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures) {
+        IDiagramModelArchimateObject sourceDmo = findFigureOnDiagram(diagram, source, pendingFigures);
+        IDiagramModelArchimateObject targetDmo = findFigureOnDiagram(diagram, target, pendingFigures);
+        if (sourceDmo == null || targetDmo == null || alreadyShowsRelationship(sourceDmo, rel)) {
+            return;
+        }
+        compound.add(new AddArchimateDiagramConnectionCommand(sourceDmo, targetDmo, rel));
+    }
+
+    private static void addArchimateConnectionNow(IArchimateDiagramModel diagram, IArchimateElement source,
+            IArchimateElement target, IArchimateRelationship rel,
+            Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures) {
+        IDiagramModelArchimateObject sourceDmo = findFigureOnDiagram(diagram, source, pendingFigures);
+        IDiagramModelArchimateObject targetDmo = findFigureOnDiagram(diagram, target, pendingFigures);
+        if (sourceDmo == null || targetDmo == null || alreadyShowsRelationship(sourceDmo, rel)) {
+            return;
+        }
+        IDiagramModelArchimateConnection conn = IArchimateFactory.eINSTANCE.createDiagramModelArchimateConnection();
+        conn.setArchimateRelationship(rel);
+        conn.connect(sourceDmo, targetDmo);
+    }
+
+    private static IDiagramModelArchimateObject findFigureOnDiagram(IDiagramModelContainer container,
+            IArchimateElement element, Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures) {
+        if (element == null) {
+            return null;
+        }
+        if (pendingFigures != null) {
+            IDiagramModelArchimateObject pending = pendingFigures.get(element);
+            if (pending != null) {
+                return pending;
+            }
+        }
+        return findFigureInChildren(container, element);
+    }
+
+    private static IDiagramModelArchimateObject findFigureInChildren(IDiagramModelContainer container,
+            IArchimateElement element) {
+        if (container == null || element == null) {
+            return null;
+        }
+        for (Object child : container.getChildren()) {
+            if (child instanceof IDiagramModelArchimateObject) {
+                IDiagramModelArchimateObject dmo = (IDiagramModelArchimateObject) child;
+                if (element.equals(dmo.getArchimateElement())) {
+                    return dmo;
+                }
+            }
+            if (child instanceof IDiagramModelContainer) {
+                IDiagramModelArchimateObject nested = findFigureInChildren((IDiagramModelContainer) child, element);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean alreadyShowsRelationship(IConnectable sourceFigure, IArchimateRelationship rel) {
+        if (sourceFigure == null || rel == null) {
+            return false;
+        }
+        for (Object c : sourceFigure.getSourceConnections()) {
+            if (c instanceof IDiagramModelConnection
+                    && rel.equals(getConnectionRelationship((IDiagramModelConnection) c))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -794,15 +927,33 @@ public final class ArchiMateLLMImporter {
             IDiagramModelArchimateObject sourceDmo = elementIdToDiagramObject.get(connSpec.getSourceElementId());
             IDiagramModelArchimateObject targetDmo = elementIdToDiagramObject.get(connSpec.getTargetElementId());
             if (sourceDmo == null || targetDmo == null) continue;
-            IDiagramModelConnection conn = IArchimateFactory.eINSTANCE.createDiagramModelConnection();
-            conn.setSource(sourceDmo);
-            conn.setTarget(targetDmo);
+            IArchimateRelationship rel = null;
             if (connSpec.getRelationshipId() != null && !connSpec.getRelationshipId().isEmpty()) {
-                IArchimateRelationship rel = idToRelationship.get(connSpec.getRelationshipId());
-                if (rel == null) rel = (IArchimateRelationship) findConceptById(model, connSpec.getRelationshipId());
-                if (rel != null) setConnectionRelationship(conn, rel);
+                rel = idToRelationship.get(connSpec.getRelationshipId());
+                if (rel == null) {
+                    IArchimateConcept found = findConceptById(model, connSpec.getRelationshipId());
+                    if (found instanceof IArchimateRelationship) {
+                        rel = (IArchimateRelationship) found;
+                    }
+                }
             }
-            addConnectionToDiagram(diagram, conn);
+            if (rel == null || alreadyShowsRelationship(sourceDmo, rel)) continue;
+            IDiagramModelArchimateConnection conn = IArchimateFactory.eINSTANCE.createDiagramModelArchimateConnection();
+            conn.setArchimateRelationship(rel);
+            conn.connect(sourceDmo, targetDmo);
+        }
+        Map<IArchimateElement, IDiagramModelArchimateObject> byElement = new HashMap<>();
+        for (IDiagramModelArchimateObject dmo : elementIdToDiagramObject.values()) {
+            if (dmo != null && dmo.getArchimateElement() != null) {
+                byElement.put(dmo.getArchimateElement(), dmo);
+            }
+        }
+        for (IArchimateRelationship rel : new java.util.LinkedHashSet<>(idToRelationship.values())) {
+            if (!(rel.getSource() instanceof IArchimateElement) || !(rel.getTarget() instanceof IArchimateElement)) {
+                continue;
+            }
+            addArchimateConnectionNow(diagram, (IArchimateElement) rel.getSource(), (IArchimateElement) rel.getTarget(),
+                    rel, byElement);
         }
     }
 
@@ -826,47 +977,6 @@ public final class ArchiMateLLMImporter {
             }
         }
         addNodesAndConnectionsToDiagram(diagram, spec, model, idToConcept, idToRelationship);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static void addConnectionToDiagram(IArchimateDiagramModel diagram, IDiagramModelConnection conn) {
-        try {
-            java.lang.reflect.Method getConn = diagram.getClass().getMethod("getConnections");
-            java.util.List<IDiagramModelConnection> list = (java.util.List<IDiagramModelConnection>) getConn.invoke(diagram);
-            if (list != null) list.add(conn);
-            return;
-        } catch (Exception e) {
-            // fallback
-        }
-        try {
-            Object src = conn.getSource();
-            if (src != null) {
-                java.lang.reflect.Method getOut = src.getClass().getMethod("getSourceConnections");
-                @SuppressWarnings("unchecked")
-                java.util.List<IDiagramModelConnection> list = (java.util.List<IDiagramModelConnection>) getOut.invoke(src);
-                if (list != null) list.add(conn);
-            }
-        } catch (Exception e2) {
-            try {
-                @SuppressWarnings("rawtypes")
-                java.util.List children = diagram.getChildren();
-                if (children != null) children.add(conn);
-            } catch (Exception e3) {
-                // skip connection
-            }
-        }
-    }
-
-    private static void setConnectionRelationship(IDiagramModelConnection conn, IArchimateRelationship rel) {
-        try {
-            conn.getClass().getMethod("setRelationship", IArchimateRelationship.class).invoke(conn, rel);
-        } catch (Exception e1) {
-            try {
-                conn.getClass().getMethod("setArchimateRelationship", IArchimateRelationship.class).invoke(conn, rel);
-            } catch (Exception e2) {
-                // API may use different method name
-            }
-        }
     }
 
     private static boolean elementExistsInModel(IArchimateModel model, EClass eClass, String name) {

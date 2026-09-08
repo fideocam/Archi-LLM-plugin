@@ -133,6 +133,19 @@ public class LlmContextConfigTest {
     }
 
     @Test
+    public void ollamaReadTimeout_scalesWithLargeNumCtx() {
+        assertEquals(480_000, LlmContextConfig.resolveOllamaReadTimeoutMs(131_072));
+        assertEquals(LlmContextConfig.DEFAULT_OLLAMA_READ_TIMEOUT_MS,
+                LlmContextConfig.resolveOllamaReadTimeoutMs(32_768));
+    }
+
+    @Test
+    public void ollamaReadTimeout_propertyWinsOverScaledNumCtx() {
+        System.setProperty(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS, "0");
+        assertEquals(0, LlmContextConfig.resolveOllamaReadTimeoutMs(131_072));
+    }
+
+    @Test
     public void maxXmlChars_readsProperty() {
         System.setProperty(LlmContextConfig.PROP_MAX_XML_CHARS, "50000");
         assertEquals(50_000, LlmContextConfig.maxXmlChars());

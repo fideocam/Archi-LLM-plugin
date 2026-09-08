@@ -86,6 +86,7 @@ public class ArchiGPTView extends ViewPart {
     private Text responseText;
     private Button sendButton;
     private Button saveAsButton;
+    private Label serverStatusLabel;
     private Combo ollamaModelCombo;
     private Text ollamaBaseUrlText;
     private Button refreshOllamaModelsButton;
@@ -151,167 +152,9 @@ public class ArchiGPTView extends ViewPart {
         mainLayout.verticalSpacing = 8;
         mainComposite.setLayout(mainLayout);
 
-        Composite serverRow = new Composite(mainComposite, SWT.NONE);
-        serverRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        GridLayout serverRowLayout = new GridLayout(3, false);
-        serverRowLayout.marginWidth = 0;
-        serverRowLayout.marginHeight = 0;
-        serverRowLayout.horizontalSpacing = 8;
-        serverRow.setLayout(serverRowLayout);
-
-        Label serverLabel = new Label(serverRow, SWT.NONE);
-        serverLabel.setText("Ollama server:");
-        GridData serverLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
-        serverLabelData.widthHint = 100;
-        serverLabel.setLayoutData(serverLabelData);
-
-        ollamaBaseUrlText = new Text(serverRow, SWT.BORDER);
-        ollamaBaseUrlText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        ollamaBaseUrlText.setMessage(OllamaClient.DEFAULT_BASE_URL);
-        ollamaBaseUrlText.setText(ArchiGPTPreferences.getBaseUrl());
-        ollamaBaseUrlText.setToolTipText("Ollama API URL, e.g. http://192.168.1.10:11434. Leave as localhost for Ollama on this machine.");
-        if (LlmContextConfig.hasExplicitOllamaBaseUrl()) {
-            ollamaBaseUrlText.setEnabled(false);
-            ollamaBaseUrlText.setToolTipText("Server URL is fixed by -D" + LlmContextConfig.PROP_OLLAMA_BASE_URL + "="
-                    + System.getProperty(LlmContextConfig.PROP_OLLAMA_BASE_URL).trim());
-        } else {
-            ollamaBaseUrlText.addFocusListener(new FocusAdapter() {
-                @Override
-                public void focusLost(FocusEvent e) {
-                    persistOllamaBaseUrlFromField();
-                }
-            });
-            ollamaBaseUrlText.addKeyListener(new KeyAdapter() {
-                @Override
-                public void keyPressed(KeyEvent e) {
-                    if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) {
-                        persistOllamaBaseUrlFromField();
-                        scheduleRefreshOllamaModelList(true);
-                    }
-                }
-            });
-        }
-
-        Button settingsButton = new Button(serverRow, SWT.PUSH);
-        settingsButton.setText("Settings…");
-        settingsButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
-        settingsButton.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                openOllamaSettings();
-            }
-        });
-
-        Composite modelRow = new Composite(mainComposite, SWT.NONE);
-        modelRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        GridLayout modelRowLayout = new GridLayout(3, false);
-        modelRowLayout.marginWidth = 0;
-        modelRowLayout.marginHeight = 0;
-        modelRowLayout.horizontalSpacing = 8;
-        modelRow.setLayout(modelRowLayout);
-
-        Label modelLabel = new Label(modelRow, SWT.NONE);
-        modelLabel.setText("Ollama model:");
-        GridData modelLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
-        modelLabelData.widthHint = 100;
-        modelLabel.setLayoutData(modelLabelData);
-
-        ollamaModelCombo = new Combo(modelRow, SWT.DROP_DOWN);
-        GridData comboData = new GridData(SWT.FILL, SWT.CENTER, true, false);
-        ollamaModelCombo.setLayoutData(comboData);
-        String initialModel = persistedOllamaModel != null && !persistedOllamaModel.trim().isEmpty()
-                ? persistedOllamaModel.trim()
-                : OllamaClient.DEFAULT_MODEL;
-        if (LlmContextConfig.hasExplicitOllamaModel()) {
-            initialModel = System.getProperty(LlmContextConfig.PROP_OLLAMA_MODEL).trim();
-        }
-        ollamaModelCombo.setItems(new String[] { initialModel });
-        ollamaModelCombo.setText(initialModel);
-        if (LlmContextConfig.hasExplicitOllamaModel()) {
-            ollamaModelCombo.setEnabled(false);
-            ollamaModelCombo.setToolTipText("Model is fixed by -D" + LlmContextConfig.PROP_OLLAMA_MODEL + "="
-                    + System.getProperty(LlmContextConfig.PROP_OLLAMA_MODEL).trim());
-        }
-
-        refreshOllamaModelsButton = new Button(modelRow, SWT.PUSH);
-        refreshOllamaModelsButton.setText("Refresh list");
-        refreshOllamaModelsButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
-        refreshOllamaModelsButton.setEnabled(!LlmContextConfig.hasExplicitOllamaModel());
-        refreshOllamaModelsButton.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                persistOllamaBaseUrlFromField();
-                scheduleRefreshOllamaModelList(false);
-            }
-        });
-
-        ollamaModelCombo.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                scheduleFetchReportedContext(0);
-            }
-        });
-        ollamaModelCombo.addModifyListener(e -> scheduleFetchReportedContext(400));
-
-        Composite contextRow = new Composite(mainComposite, SWT.NONE);
-        contextRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        GridLayout contextRowLayout = new GridLayout(5, false);
-        contextRowLayout.marginWidth = 0;
-        contextRowLayout.marginHeight = 0;
-        contextRowLayout.horizontalSpacing = 8;
-        contextRow.setLayout(contextRowLayout);
-
-        Label contextLabel = new Label(contextRow, SWT.NONE);
-        contextLabel.setText("Context size:");
-        GridData contextLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
-        contextLabelData.widthHint = 100;
-        contextLabel.setLayoutData(contextLabelData);
-
-        contextSizeText = new Text(contextRow, SWT.BORDER);
-        GridData contextSizeData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
-        contextSizeData.widthHint = 80;
-        contextSizeText.setLayoutData(contextSizeData);
-        customNumCtx = ArchiGPTPreferences.getNumCtx();
-        contextSizeText.setText(Integer.toString(customNumCtx));
-        contextSizeText.setToolTipText("Tokens sent as Ollama num_ctx. Uncheck Use model max to type a smaller window.");
-        contextSizeText.addFocusListener(new FocusAdapter() {
-            @Override
-            public void focusLost(FocusEvent e) {
-                persistNumCtxFromField();
-            }
-        });
-        contextSizeText.addKeyListener(new KeyAdapter() {
-            @Override
-            public void keyPressed(KeyEvent e) {
-                if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) {
-                    persistNumCtxFromField();
-                }
-            }
-        });
-
-        Label tokensLabel = new Label(contextRow, SWT.NONE);
-        tokensLabel.setText("tokens");
-
-        contextMaxLabel = new Label(contextRow, SWT.NONE);
-        contextMaxLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        contextMaxLabel.setText("model max: …");
-
-        useModelMaxButton = new Button(contextRow, SWT.CHECK);
-        useModelMaxButton.setText("Use model max");
-        useModelMaxButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
-        useModelMaxButton.setToolTipText(
-                "Request this model's full context window from Ollama. Leave unchecked on laptops; large windows can be slow to allocate.");
-        useModelMaxButton.setSelection(ArchiGPTPreferences.isUseModelMaxCtx());
-        useModelMaxButton.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                onUseModelMaxToggled();
-            }
-        });
-        applyContextFieldEnabledState();
-
-        scheduleRefreshOllamaModelList(true);
-        scheduleFetchReportedContext(0);
+        serverStatusLabel = new Label(mainComposite, SWT.WRAP);
+        serverStatusLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        serverStatusLabel.setToolTipText("Change server, model, and context size on the Server tab.");
 
         Label promptLabel = new Label(mainComposite, SWT.NONE);
         promptLabel.setText("Prompt:");
@@ -375,6 +218,197 @@ public class ArchiGPTView extends ViewPart {
                 onSaveAsResponse();
             }
         });
+
+        // ---- Server tab: URL, model, context ----
+        CTabItem serverTab = new CTabItem(tabFolder, SWT.NONE);
+        serverTab.setText("Server");
+        Composite serverComposite = new Composite(tabFolder, SWT.NONE);
+        serverTab.setControl(serverComposite);
+        GridLayout serverLayout = new GridLayout(1, false);
+        serverLayout.marginWidth = 10;
+        serverLayout.marginHeight = 10;
+        serverLayout.verticalSpacing = 10;
+        serverComposite.setLayout(serverLayout);
+
+        Composite serverRow = new Composite(serverComposite, SWT.NONE);
+        serverRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout serverRowLayout = new GridLayout(3, false);
+        serverRowLayout.marginWidth = 0;
+        serverRowLayout.marginHeight = 0;
+        serverRowLayout.horizontalSpacing = 8;
+        serverRow.setLayout(serverRowLayout);
+
+        Label serverLabel = new Label(serverRow, SWT.NONE);
+        serverLabel.setText("Ollama server:");
+        GridData serverLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        serverLabelData.widthHint = 100;
+        serverLabel.setLayoutData(serverLabelData);
+
+        ollamaBaseUrlText = new Text(serverRow, SWT.BORDER);
+        ollamaBaseUrlText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        ollamaBaseUrlText.setMessage(OllamaClient.DEFAULT_BASE_URL);
+        ollamaBaseUrlText.setText(ArchiGPTPreferences.getBaseUrl());
+        ollamaBaseUrlText.setToolTipText("Ollama API URL, e.g. http://192.168.1.10:11434. Leave as localhost for Ollama on this machine.");
+        if (LlmContextConfig.hasExplicitOllamaBaseUrl()) {
+            ollamaBaseUrlText.setEnabled(false);
+            ollamaBaseUrlText.setToolTipText("Server URL is fixed by -D" + LlmContextConfig.PROP_OLLAMA_BASE_URL + "="
+                    + System.getProperty(LlmContextConfig.PROP_OLLAMA_BASE_URL).trim());
+        } else {
+            ollamaBaseUrlText.addFocusListener(new FocusAdapter() {
+                @Override
+                public void focusLost(FocusEvent e) {
+                    persistOllamaBaseUrlFromField();
+                }
+            });
+            ollamaBaseUrlText.addKeyListener(new KeyAdapter() {
+                @Override
+                public void keyPressed(KeyEvent e) {
+                    if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) {
+                        persistOllamaBaseUrlFromField();
+                        scheduleRefreshOllamaModelList(true);
+                    }
+                }
+            });
+        }
+
+        Button settingsButton = new Button(serverRow, SWT.PUSH);
+        settingsButton.setText("Settings…");
+        settingsButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        settingsButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                openOllamaSettings();
+            }
+        });
+
+        Composite modelRow = new Composite(serverComposite, SWT.NONE);
+        modelRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout modelRowLayout = new GridLayout(3, false);
+        modelRowLayout.marginWidth = 0;
+        modelRowLayout.marginHeight = 0;
+        modelRowLayout.horizontalSpacing = 8;
+        modelRow.setLayout(modelRowLayout);
+
+        Label modelLabel = new Label(modelRow, SWT.NONE);
+        modelLabel.setText("Ollama model:");
+        GridData modelLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        modelLabelData.widthHint = 100;
+        modelLabel.setLayoutData(modelLabelData);
+
+        ollamaModelCombo = new Combo(modelRow, SWT.DROP_DOWN);
+        GridData comboData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        ollamaModelCombo.setLayoutData(comboData);
+        String initialModel = persistedOllamaModel != null && !persistedOllamaModel.trim().isEmpty()
+                ? persistedOllamaModel.trim()
+                : OllamaClient.DEFAULT_MODEL;
+        if (LlmContextConfig.hasExplicitOllamaModel()) {
+            initialModel = System.getProperty(LlmContextConfig.PROP_OLLAMA_MODEL).trim();
+        }
+        ollamaModelCombo.setItems(new String[] { initialModel });
+        ollamaModelCombo.setText(initialModel);
+        if (LlmContextConfig.hasExplicitOllamaModel()) {
+            ollamaModelCombo.setEnabled(false);
+            ollamaModelCombo.setToolTipText("Model is fixed by -D" + LlmContextConfig.PROP_OLLAMA_MODEL + "="
+                    + System.getProperty(LlmContextConfig.PROP_OLLAMA_MODEL).trim());
+        }
+
+        refreshOllamaModelsButton = new Button(modelRow, SWT.PUSH);
+        refreshOllamaModelsButton.setText("Refresh list");
+        refreshOllamaModelsButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        refreshOllamaModelsButton.setEnabled(!LlmContextConfig.hasExplicitOllamaModel());
+        refreshOllamaModelsButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                persistOllamaBaseUrlFromField();
+                scheduleRefreshOllamaModelList(false);
+            }
+        });
+
+        ollamaModelCombo.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                scheduleFetchReportedContext(0);
+                refreshServerStatusLine();
+            }
+        });
+        ollamaModelCombo.addModifyListener(e -> {
+            scheduleFetchReportedContext(400);
+            refreshServerStatusLine();
+        });
+
+        Composite contextRow = new Composite(serverComposite, SWT.NONE);
+        contextRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout contextRowLayout = new GridLayout(5, false);
+        contextRowLayout.marginWidth = 0;
+        contextRowLayout.marginHeight = 0;
+        contextRowLayout.horizontalSpacing = 8;
+        contextRow.setLayout(contextRowLayout);
+
+        Label contextLabel = new Label(contextRow, SWT.NONE);
+        contextLabel.setText("Context size:");
+        GridData contextLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        contextLabelData.widthHint = 100;
+        contextLabel.setLayoutData(contextLabelData);
+
+        contextSizeText = new Text(contextRow, SWT.BORDER);
+        GridData contextSizeData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        contextSizeData.widthHint = 80;
+        contextSizeText.setLayoutData(contextSizeData);
+        customNumCtx = ArchiGPTPreferences.getNumCtx();
+        contextSizeText.setText(Integer.toString(customNumCtx));
+        contextSizeText.setToolTipText(
+                "Tokens sent as Ollama num_ctx (KV cache size for this request). Uncheck Use model max to type a smaller window.");
+        contextSizeText.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                persistNumCtxFromField();
+            }
+        });
+        contextSizeText.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) {
+                    persistNumCtxFromField();
+                }
+            }
+        });
+
+        Label tokensLabel = new Label(contextRow, SWT.NONE);
+        tokensLabel.setText("tokens");
+
+        contextMaxLabel = new Label(contextRow, SWT.NONE);
+        contextMaxLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        contextMaxLabel.setText("Ollama max: …");
+        contextMaxLabel.setToolTipText(
+                "Largest context_length / num_ctx reported by this Ollama server for the selected model (POST /api/show). "
+                        + "That is the architecture limit, not a recommended request size.");
+
+        useModelMaxButton = new Button(contextRow, SWT.CHECK);
+        useModelMaxButton.setText("Use model max");
+        useModelMaxButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        useModelMaxButton.setToolTipText(
+                "Request this model's full architecture context from Ollama. That allocates a KV cache of that size and can "
+                        + "fail or take many minutes if VRAM is insufficient — even on a large GPU.");
+        useModelMaxButton.setSelection(ArchiGPTPreferences.isUseModelMaxCtx());
+        useModelMaxButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                onUseModelMaxToggled();
+            }
+        });
+        applyContextFieldEnabledState();
+
+        Label contextHint = new Label(serverComposite, SWT.WRAP);
+        GridData contextHintData = new GridData(SWT.FILL, SWT.TOP, true, false);
+        contextHintData.widthHint = 400;
+        contextHint.setLayoutData(contextHintData);
+        contextHint.setText("Ollama max comes from this server (POST /api/show), not from ArchiGPT. "
+                + "It is the model's architecture limit. Sending that as num_ctx makes Ollama allocate a KV cache of that "
+                + "size for every request; if calls time out or return a memory error, uncheck Use model max and try 32768 or 65536.");
+
+        scheduleRefreshOllamaModelList(true);
+        scheduleFetchReportedContext(0);
+        refreshServerStatusLine();
 
         // ---- Debug tab: version, what was sent, model XML ----
         CTabItem debugTab = new CTabItem(tabFolder, SWT.NONE);
@@ -454,22 +488,16 @@ public class ArchiGPTView extends ViewPart {
                                 merged.add(n.trim());
                             }
                         }
-                        if (!keep.isEmpty()) {
-                            merged.add(keep);
-                        }
-                        if (merged.isEmpty()) {
-                            merged.add(OllamaClient.DEFAULT_MODEL);
-                        }
                         List<String> items = new ArrayList<>(merged);
                         Collections.sort(items, String.CASE_INSENSITIVE_ORDER);
                         ollamaModelCombo.setItems(items.toArray(new String[0]));
-                        int idx = items.indexOf(keep);
+                        int idx = indexOfModel(items, keep);
                         if (idx >= 0) {
                             ollamaModelCombo.select(idx);
-                        } else if (!keep.isEmpty()) {
-                            ollamaModelCombo.setText(keep);
                         } else if (!items.isEmpty()) {
                             ollamaModelCombo.select(0);
+                        } else {
+                            ollamaModelCombo.setText("");
                         }
                         scheduleFetchReportedContext(0);
                     });
@@ -499,6 +527,26 @@ public class ArchiGPTView extends ViewPart {
         job.schedule();
     }
 
+    /**
+     * Index of {@code name} in a tags list. Prefers an exact match, then {@code name:latest}.
+     */
+    private static int indexOfModel(List<String> items, String name) {
+        if (items == null || name == null || name.isEmpty()) {
+            return -1;
+        }
+        int exact = items.indexOf(name);
+        if (exact >= 0) {
+            return exact;
+        }
+        String latest = name + ":latest";
+        for (int i = 0; i < items.size(); i++) {
+            if (latest.equalsIgnoreCase(items.get(i)) || name.equalsIgnoreCase(items.get(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private String currentOllamaBaseUrl() {
         String fromField = (ollamaBaseUrlText != null && !ollamaBaseUrlText.isDisposed())
                 ? ollamaBaseUrlText.getText() : "";
@@ -520,6 +568,7 @@ public class ArchiGPTView extends ViewPart {
             ArchiGPTPreferences.setBaseUrl(normalized);
         } catch (Exception ignored) {
         }
+        refreshServerStatusLine();
     }
 
     private void onUseModelMaxToggled() {
@@ -555,6 +604,7 @@ public class ArchiGPTView extends ViewPart {
         } finally {
             updatingContextUi = false;
         }
+        refreshServerStatusLine();
     }
 
     private void applyContextFieldEnabledState() {
@@ -608,6 +658,7 @@ public class ArchiGPTView extends ViewPart {
             ArchiGPTPreferences.setNumCtx(customNumCtx);
         } catch (Exception ignored) {
         }
+        refreshServerStatusLine();
     }
 
     private int parseContextSizeField() {
@@ -648,7 +699,7 @@ public class ArchiGPTView extends ViewPart {
             contextFetchJob.cancel();
         }
         if (contextMaxLabel != null && !contextMaxLabel.isDisposed()) {
-            contextMaxLabel.setText("model max: …");
+            contextMaxLabel.setText("Ollama max: …");
         }
         Job job = new Job("ArchiGPT – model context") {
             @Override
@@ -690,9 +741,9 @@ public class ArchiGPTView extends ViewPart {
         lastReportedCtx = reported;
         if (contextMaxLabel != null && !contextMaxLabel.isDisposed()) {
             if (reported >= LlmContextConfig.OLLAMA_NUM_CTX_MIN) {
-                contextMaxLabel.setText("model max: " + reported);
+                contextMaxLabel.setText("Ollama max: " + reported);
             } else {
-                contextMaxLabel.setText("model max: unknown");
+                contextMaxLabel.setText("Ollama max: unknown");
             }
         }
         if (isUseModelMaxSelected() && reported >= LlmContextConfig.OLLAMA_NUM_CTX_MIN
@@ -704,6 +755,28 @@ public class ArchiGPTView extends ViewPart {
                 updatingContextUi = false;
             }
         }
+        refreshServerStatusLine();
+    }
+
+    private void refreshServerStatusLine() {
+        if (serverStatusLabel == null || serverStatusLabel.isDisposed()) {
+            return;
+        }
+        String model = ollamaModelCombo != null && !ollamaModelCombo.isDisposed()
+                ? LlmContextConfig.resolveOllamaModel(ollamaModelCombo.getText())
+                : OllamaClient.DEFAULT_MODEL;
+        String url = currentOllamaBaseUrl();
+        int ctx = parseContextSizeField();
+        if (isUseModelMaxSelected() && lastReportedCtx >= LlmContextConfig.OLLAMA_NUM_CTX_MIN) {
+            ctx = lastReportedCtx;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Ollama: ").append(model).append(" @ ").append(url);
+        sb.append("  ·  ").append(ctx).append(" tokens");
+        if (lastReportedCtx >= LlmContextConfig.OLLAMA_NUM_CTX_MIN) {
+            sb.append(" (server max ").append(lastReportedCtx).append(")");
+        }
+        serverStatusLabel.setText(sb.toString());
     }
 
     private void openOllamaSettings() {
@@ -1267,12 +1340,12 @@ public class ArchiGPTView extends ViewPart {
                     summary.append(" (clamped to ArchiGPT maximum of ").append(LlmContextConfig.OLLAMA_NUM_CTX_MAX)
                             .append(")");
                 } else {
-                    summary.append(" (below model max; enable Use model max or type a larger Context size)");
+            summary.append(" (below Ollama max; enable Use model max on the Server tab or type a larger Context size)");
                 }
             }
         } else {
             summary.append("could not read context from /api/show; using num_ctx=").append(numCtxForOllama)
-                    .append(" (set Context size in the view, or -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX)
+                    .append(" (set Context size on the Server tab, or -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX)
                     .append(" to override)");
         }
         summary.append(". Max model XML chars=").append(maxXmlChars);
@@ -1282,15 +1355,20 @@ public class ArchiGPTView extends ViewPart {
             summary.append(" (auto: context minus system prompt, wrappers, and ~").append(LlmContextBudget.DEFAULT_REPLY_RESERVE_TOKENS)
                     .append(" token reply reserve)");
         }
-        int ollamaReadTimeoutMs = LlmContextConfig.resolveOllamaReadTimeoutMs();
+        int ollamaReadTimeoutMs = LlmContextConfig.resolveOllamaReadTimeoutMs(numCtxForOllama);
         summary.append("\nOllama HTTP read timeout: ");
         if (ollamaReadTimeoutMs == 0) {
             summary.append("unlimited (-D").append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append("=0)");
         } else {
             summary.append(ollamaReadTimeoutMs / 1000).append(" s");
             if (!LlmContextConfig.hasExplicitOllamaReadTimeout()) {
-                summary.append(" (default). If you see \"Read timed out\", increase -D")
-                        .append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append(" in Archi.ini vmargs.");
+                if (numCtxForOllama > LlmContextConfig.DEFAULT_OLLAMA_REPORTED_CTX_CAP) {
+                    summary.append(" (scaled with num_ctx; override with -D")
+                            .append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append(")");
+                } else {
+                    summary.append(" (default). If you see \"Read timed out\", increase -D")
+                            .append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append(" in Archi.ini vmargs.");
+                }
             } else {
                 summary.append(" (-D").append(LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS).append(")");
             }
@@ -1509,12 +1587,17 @@ public class ArchiGPTView extends ViewPart {
                         return Status.CANCEL_STATUS;
                     }
                     String err = e.getMessage() != null ? e.getMessage() : "";
+                    String errLower = err.toLowerCase(Locale.ROOT);
                     toShow = "Error: " + err + "\n\nEnsure Ollama is running (e.g. ollama serve) and the model is available (e.g. ollama run " + ollamaModelResolved + ").";
-                    if (err.toLowerCase(Locale.ROOT).contains("timed out")) {
-                        toShow += "\n\nIf Ollama is running, a common cause is an oversized num_ctx (the model’s reported max context can be 128k+ and makes each request very slow). Try -D"
-                                + LlmContextConfig.PROP_OLLAMA_NUM_CTX + "=8192 in Archi.ini (vmargs), or adjust -D"
-                                + LlmContextConfig.PROP_OLLAMA_REPORTED_CTX_CAP + " (default 32768). Raise -D"
-                                + LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS + " only when completions truly need more than two minutes.";
+                    if (errLower.contains("timed out")) {
+                        toShow += "\n\nLarge num_ctx (" + numCtxForOllama
+                                + ") makes Ollama allocate a KV cache of that size before it starts generating, which often exceeds a short HTTP timeout. "
+                                + "On the Server tab, uncheck Use model max or type a smaller Context size (32768 or 65536). "
+                                + "Ollama max is the model's architecture limit from this server, not a size that always fits in VRAM. "
+                                + "To wait longer, set -D" + LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS + "=0 in Archi.ini (vmargs).";
+                    } else if (errLower.contains("memory") || errLower.contains("out of mem") || errLower.contains("cuda")) {
+                        toShow += "\n\nOllama could not allocate num_ctx=" + numCtxForOllama
+                                + " for this model. That value is the architecture maximum from /api/show. Uncheck Use model max on the Server tab and try 32768 or 65536.";
                     }
                     if (raw != null) {
                         toShow += "\n\nRaw LLM response:\n" + truncate(raw, 4000);

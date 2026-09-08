@@ -232,4 +232,41 @@ public class ArchiMateImportFlowTest {
         Object children = diagram.getClass().getMethod("getChildren").invoke(diagram);
         assertTrue("Existing diagram should have the new element as figure", ((List<?>) children).size() >= 1);
     }
+
+    @Test
+    public void importWithTargetDiagram_addsRelationshipArrowsOnView() throws Exception {
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(GOOD_LLM_RESPONSE);
+        List<String> errors = ArchiMateSchemaValidator.validate(parsed);
+        assertTrue("Validation should pass: " + errors, errors.isEmpty());
+
+        Object factory = Class.forName("com.archimatetool.model.IArchimateFactory").getField("eINSTANCE").get(null);
+        Object model = factory.getClass().getMethod("createArchimateModel").invoke(factory);
+        model.getClass().getMethod("setDefaults").invoke(model);
+
+        Object diagramsFolder = model.getClass().getMethod("getFolder", Class.forName("com.archimatetool.model.FolderType"))
+                .invoke(model, Class.forName("com.archimatetool.model.FolderType").getField("DIAGRAMS").get(null));
+        Object diagram = factory.getClass().getMethod("createArchimateDiagramModel").invoke(factory);
+        diagram.getClass().getMethod("setName", String.class).invoke(diagram, "Open View");
+        @SuppressWarnings("unchecked")
+        java.util.List<Object> folderElements = (java.util.List<Object>) diagramsFolder.getClass().getMethod("getElements")
+                .invoke(diagramsFolder);
+        folderElements.add(diagram);
+
+        Method importMethod = ArchiMateLLMImporter.class.getMethod("importIntoModel", ArchiMateLLMResult.class,
+                Class.forName("com.archimatetool.model.IArchimateModel"), Class.forName("com.archimatetool.model.IFolder"),
+                Class.forName("com.archimatetool.model.IArchimateDiagramModel"));
+        importMethod.invoke(null, parsed, model, null, diagram);
+
+        Object children = diagram.getClass().getMethod("getChildren").invoke(diagram);
+        assertTrue("Open view should have figures for the new elements", ((List<?>) children).size() >= 2);
+        int connectionCount = 0;
+        for (Object child : (List<?>) children) {
+            Object sourceConns = child.getClass().getMethod("getSourceConnections").invoke(child);
+            if (sourceConns instanceof List) {
+                connectionCount += ((List<?>) sourceConns).size();
+            }
+        }
+        assertTrue("Open view should show a relationship arrow between the new figures, not only store it in the model",
+                connectionCount >= 1);
+    }
 }

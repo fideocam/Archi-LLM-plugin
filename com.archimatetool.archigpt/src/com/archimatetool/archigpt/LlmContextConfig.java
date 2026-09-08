@@ -14,7 +14,7 @@ import java.net.URL;
  *   <li>{@value #PROP_OLLAMA_NUM_CTX} — Ollama {@code num_ctx} (optional). When set, overrides the ArchiGPT view context field. If unset, the view uses {@code POST /api/show} for the model's maximum; the default request size is still clamped to {@value #DEFAULT_OLLAMA_REPORTED_CTX_CAP} unless <em>Use model max</em> is checked or a custom size is typed (see {@value #PROP_OLLAMA_REPORTED_CTX_CAP}).</li>
  *   <li>{@value #PROP_CHUNKED_ANALYSIS} — set {@code false} to disable multi-request plain-text analysis for huge models.</li>
  *   <li>{@value #PROP_SEMANTIC_CHUNKED_ANALYSIS} — set {@code false} to use plain string-split chunks instead of folder/view-based chunks.</li>
- *   <li>{@value #PROP_OLLAMA_READ_TIMEOUT_MS} — max milliseconds to wait for Ollama to finish one chat/generate response (default {@value #DEFAULT_OLLAMA_READ_TIMEOUT_MS}). Use {@code 0} for no read timeout. If you see {@code Read timed out}, try lowering {@value #PROP_OLLAMA_REPORTED_CTX_CAP} or setting an explicit {@value #PROP_OLLAMA_NUM_CTX} before raising the timeout.</li>
+ *   <li>{@value #PROP_OLLAMA_READ_TIMEOUT_MS} — max milliseconds to wait for Ollama to finish one chat/generate response. If unset, ArchiGPT uses {@value #DEFAULT_OLLAMA_READ_TIMEOUT_MS} and scales up with {@code num_ctx} (capped at two hours). Use {@code 0} for no read timeout.</li>
  *   <li>{@value #PROP_OLLAMA_MODEL} — Ollama model name (optional). When set, overrides the model chosen in the ArchiGPT view dropdown.</li>
  *   <li>{@value #PROP_OLLAMA_BASE_URL} — Ollama API base URL (optional). When set, overrides the server URL in the ArchiGPT view and preferences (e.g. {@code http://192.168.1.10:11434}).</li>
  * </ul>
@@ -234,22 +234,39 @@ public final class LlmContextConfig {
      * {@code 0} = no read timeout. Invalid or negative values fall back to {@link #DEFAULT_OLLAMA_READ_TIMEOUT_MS}.
      */
     public static int resolveOllamaReadTimeoutMs() {
+        return resolveOllamaReadTimeoutMs(0);
+    }
+
+    /**
+     * Read timeout for a completion that requests {@code numCtx} tokens.
+     * An explicit {@link #PROP_OLLAMA_READ_TIMEOUT_MS} always wins (including {@code 0} = unlimited).
+     * Otherwise the default 2 minutes is scaled up with {@code num_ctx} so a 128k window is not cut off
+     * while Ollama allocates the KV cache.
+     */
+    public static int resolveOllamaReadTimeoutMs(int numCtx) {
         String raw = System.getProperty(PROP_OLLAMA_READ_TIMEOUT_MS);
-        if (raw == null || raw.trim().isEmpty()) {
-            return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
-        }
-        try {
-            int v = Integer.parseInt(raw.trim());
-            if (v < 0) {
+        if (raw != null && !raw.trim().isEmpty()) {
+            try {
+                int v = Integer.parseInt(raw.trim());
+                if (v < 0) {
+                    return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
+                }
+                if (v == 0) {
+                    return 0;
+                }
+                return Math.min(v, OLLAMA_READ_TIMEOUT_MS_CEILING);
+            } catch (NumberFormatException e) {
                 return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
             }
-            if (v == 0) {
-                return 0;
-            }
-            return Math.min(v, OLLAMA_READ_TIMEOUT_MS_CEILING);
-        } catch (NumberFormatException e) {
+        }
+        if (numCtx <= DEFAULT_OLLAMA_REPORTED_CTX_CAP) {
             return DEFAULT_OLLAMA_READ_TIMEOUT_MS;
         }
+        long scaled = (long) numCtx * DEFAULT_OLLAMA_READ_TIMEOUT_MS / DEFAULT_OLLAMA_REPORTED_CTX_CAP;
+        if (scaled > OLLAMA_READ_TIMEOUT_MS_CEILING) {
+            return OLLAMA_READ_TIMEOUT_MS_CEILING;
+        }
+        return (int) Math.max(DEFAULT_OLLAMA_READ_TIMEOUT_MS, scaled);
     }
 
     /**
