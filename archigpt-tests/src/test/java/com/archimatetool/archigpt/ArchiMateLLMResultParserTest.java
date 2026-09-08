@@ -156,4 +156,21 @@ public class ArchiMateLLMResultParserTest {
         assertEquals(1, result.getRemoveRelationshipIds().size());
         assertEquals(rel1, result.getRemoveRelationshipIds().get(0));
     }
+
+    @Test
+    public void parseRemoveOnlyJsonWithoutElementsKey() {
+        String json = "Please apply this.\n{\"removeElementIds\":[\"" + E1 + "\"]}";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+        assertEquals(1, result.getRemoveElementIds().size());
+        assertEquals(E1, result.getRemoveElementIds().get(0));
+        assertTrue(result.getElements().isEmpty());
+    }
+
+    @Test
+    public void parseRemoveFromDiagramIds() {
+        String json = "{\"elements\":[],\"relationships\":[],\"removeElementFromDiagramIds\":[\"" + E1 + "\"]}";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+        assertEquals(1, result.getRemoveElementFromDiagramIds().size());
+        assertEquals(E1, result.getRemoveElementFromDiagramIds().get(0));
+    }
 }

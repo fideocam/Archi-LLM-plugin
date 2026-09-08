@@ -339,6 +339,114 @@ public class ArchiMateImportFlowTest {
         assertEquals("No arrow when only one end is on the view", 0, sourceConnectionCount(diagram));
     }
 
+    @Test
+    public void importRemoveElement_alsoRemovesConnectedRelationship() throws Exception {
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(GOOD_LLM_RESPONSE);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+
+        Object factory = factory();
+        Object model = createModel(factory);
+        importWithDiagram(parsed, model, null);
+        assertTrue("Setup should add two elements and a relationship", countElementsInModel(model) >= 3);
+        assertTrue(modelContainsId(model, E1));
+        assertTrue(modelContainsId(model, R1));
+
+        ArchiMateLLMResult remove = ArchiMateLLMResultParser.parse(
+                "{\"elements\":[],\"relationships\":[],\"removeElementIds\":[\"" + E1 + "\"]}");
+        importWithDiagram(remove, model, null);
+
+        assertFalse("Removed element should leave the model", modelContainsId(model, E1));
+        assertFalse("Relationships attached to the removed element should also be deleted", modelContainsId(model, R1));
+        assertTrue("Unrelated element should remain", modelContainsId(model, E2));
+    }
+
+    @Test
+    public void importRemoveElement_hyphenatedUuidStillMatches() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+
+        String hyphenated = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+        ArchiMateLLMResult remove = ArchiMateLLMResultParser.parse(
+                "{\"elements\":[],\"relationships\":[],\"removeElementIds\":[\"" + hyphenated + "\"]}");
+        importWithDiagram(remove, model, null);
+
+        assertFalse(modelContainsId(model, E1));
+    }
+
+    @Test
+    public void importRemoveElement_uniqueNameFallback() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        addNamedConcept(factory, model, "createBusinessRole", "Buyer", E2);
+
+        ArchiMateLLMResult remove = ArchiMateLLMResultParser.parse(
+                "{\"elements\":[],\"relationships\":[],\"removeElementIds\":[\"Customer\"]}");
+        importWithDiagram(remove, model, null);
+
+        assertFalse(modelContainsId(model, E1));
+        assertTrue(modelContainsId(model, E2));
+    }
+
+    @Test
+    public void importRemoveElement_ambiguousNameDoesNotDelete() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        String e3 = "id-d4e5f67890abcdef1234567890abcdef";
+        addNamedConcept(factory, model, "createBusinessActor", "Customer", e3);
+
+        ArchiMateLLMResult remove = ArchiMateLLMResultParser.parse(
+                "{\"elements\":[],\"relationships\":[],\"removeElementIds\":[\"Customer\"]}");
+        importWithDiagram(remove, model, null);
+
+        assertTrue(modelContainsId(model, E1));
+        assertTrue(modelContainsId(model, e3));
+    }
+
+    @Test
+    public void importRemoveFromDiagramOnly_leavesElementInModel() throws Exception {
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(GOOD_LLM_RESPONSE);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object diagram = addEmptyDiagram(factory, model, "Open View");
+        importWithDiagram(parsed, model, diagram);
+        assertTrue(childCount(diagram) >= 2);
+        assertTrue(modelContainsId(model, E1));
+
+        ArchiMateLLMResult remove = ArchiMateLLMResultParser.parse(
+                "{\"elements\":[],\"relationships\":[],\"removeElementFromDiagramIds\":[\"" + E1 + "\"]}");
+        importWithDiagram(remove, model, diagram);
+
+        assertTrue("Diagram-only remove must keep the concept in the model", modelContainsId(model, E1));
+        assertEquals("Figure should be gone from the open view", 1, childCount(diagram));
+    }
+
+    private static boolean modelContainsId(Object model, String id) throws Exception {
+        Object folders = model.getClass().getMethod("getFolders").invoke(model);
+        return folderContainsId(folders, id);
+    }
+
+    private static boolean folderContainsId(Object folders, String id) throws Exception {
+        for (Object folder : (Iterable<?>) folders) {
+            Object elements = folder.getClass().getMethod("getElements").invoke(folder);
+            for (Object el : (Iterable<?>) elements) {
+                Object existing = el.getClass().getMethod("getId").invoke(el);
+                if (id.equals(existing)) {
+                    return true;
+                }
+            }
+            Object childFolders = folder.getClass().getMethod("getFolders").invoke(folder);
+            if (childFolders instanceof Iterable && folderContainsId(childFolders, id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static Object factory() throws Exception {
         return Class.forName("com.archimatetool.model.IArchimateFactory").getField("eINSTANCE").get(null);
     }

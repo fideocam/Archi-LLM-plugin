@@ -173,8 +173,12 @@ public final class ArchiMateLLMResultParser {
             int end = findMatchingBracket(s, i);
             if (end <= i) continue;
             String candidate = s.substring(i, end + 1);
-            // Must be the CHANGES payload: has "elements" or "diagram" key
-            if (candidate.contains("\"elements\"") || candidate.contains("\"diagram\"")) {
+            // Must be the CHANGES payload (add, new view, or remove)
+            if (candidate.contains("\"elements\"") || candidate.contains("\"diagram\"")
+                    || candidate.contains("\"removeElementIds\"") || candidate.contains("\"removeRelationshipIds\"")
+                    || candidate.contains("\"removeDiagramNames\"")
+                    || candidate.contains("\"removeElementFromDiagramIds\"")
+                    || candidate.contains("\"removeRelationshipFromDiagramIds\"")) {
                 return candidate;
             }
         }
