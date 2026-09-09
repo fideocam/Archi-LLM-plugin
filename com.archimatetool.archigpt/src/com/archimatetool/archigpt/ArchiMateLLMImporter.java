@@ -153,7 +153,9 @@ public final class ArchiMateLLMImporter {
                 continue;
             }
             String name = e.getName() != null ? e.getName() : "";
-            if (elementExistsInModel(model, eClass, name)) {
+            IArchimateElement existing = existingElementForSpec(model, eClass, name, e.getId());
+            if (existing != null) {
+                rememberConceptId(idToConcept, e.getId(), existing);
                 continue;
             }
             IArchimateElement element = (IArchimateElement) IArchimateFactory.eINSTANCE.create(eClass);
@@ -448,7 +450,9 @@ public final class ArchiMateLLMImporter {
                 continue;
             }
             String name = e.getName() != null ? e.getName() : "";
-            if (elementExistsInModel(model, eClass, name)) {
+            IArchimateElement existing = existingElementForSpec(model, eClass, name, e.getId());
+            if (existing != null) {
+                rememberConceptId(idToConcept, e.getId(), existing);
                 continue;
             }
             IArchimateElement element = (IArchimateElement) IArchimateFactory.eINSTANCE.create(eClass);
@@ -1094,26 +1098,69 @@ public final class ArchiMateLLMImporter {
         addNodesAndConnectionsToDiagram(diagram, spec, model, idToConcept, idToRelationship);
     }
 
-    private static boolean elementExistsInModel(IArchimateModel model, EClass eClass, String name) {
-        if (model == null || eClass == null) return false;
-        String n = name == null ? "" : name.trim();
-        for (IFolder f : model.getFolders()) {
-            if (folderContainsElementWithTypeAndName(f, eClass, n)) return true;
+    private static void rememberConceptId(Map<String, IArchimateConcept> idToConcept, String llmId,
+            IArchimateConcept concept) {
+        if (idToConcept == null || concept == null) {
+            return;
         }
-        return false;
+        if (concept.getId() != null && !concept.getId().isEmpty()) {
+            idToConcept.put(concept.getId(), concept);
+        }
+        if (llmId != null && !llmId.trim().isEmpty()) {
+            String trimmed = llmId.trim();
+            idToConcept.put(trimmed, concept);
+            String normalized = normalizeLookupId(trimmed);
+            if (normalized != null) {
+                idToConcept.put(normalized, concept);
+            }
+        }
     }
 
-    private static boolean folderContainsElementWithTypeAndName(IFolder folder, EClass eClass, String name) {
-        if (folder == null) return false;
+    /**
+     * Element already in the model for this spec: same id, or same type+name (LLM re-listing context).
+     * Callers must still map the LLM's id onto that element so relationships in this payload resolve.
+     */
+    private static IArchimateElement existingElementForSpec(IArchimateModel model, EClass eClass, String name,
+            String llmId) {
+        IArchimateConcept byId = findConceptById(model, llmId);
+        if (byId instanceof IArchimateElement && eClass != null && eClass.isInstance(byId)) {
+            return (IArchimateElement) byId;
+        }
+        return findElementByTypeAndName(model, eClass, name);
+    }
+
+    private static IArchimateElement findElementByTypeAndName(IArchimateModel model, EClass eClass, String name) {
+        if (model == null || eClass == null) {
+            return null;
+        }
+        String n = name == null ? "" : name.trim();
+        for (IFolder f : model.getFolders()) {
+            IArchimateElement found = findElementByTypeAndNameInFolder(f, eClass, n);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static IArchimateElement findElementByTypeAndNameInFolder(IFolder folder, EClass eClass, String name) {
+        if (folder == null) {
+            return null;
+        }
         for (EObject obj : folder.getElements()) {
             if (obj instanceof IArchimateElement && eClass.isInstance(obj)) {
                 String existing = ((IArchimateElement) obj).getName();
-                if (existing != null && existing.trim().equalsIgnoreCase(name)) return true;
+                if (existing != null && existing.trim().equalsIgnoreCase(name)) {
+                    return (IArchimateElement) obj;
+                }
             }
         }
         for (IFolder child : folder.getFolders()) {
-            if (folderContainsElementWithTypeAndName(child, eClass, name)) return true;
+            IArchimateElement found = findElementByTypeAndNameInFolder(child, eClass, name);
+            if (found != null) {
+                return found;
+            }
         }
-        return false;
+        return null;
     }
 }

@@ -173,4 +173,37 @@ public class ArchiMateLLMResultParserTest {
         assertEquals(1, result.getRemoveElementFromDiagramIds().size());
         assertEquals(E1, result.getRemoveElementFromDiagramIds().get(0));
     }
+
+    @Test
+    public void parseElements_anyKeyOrderAndExtraFields() {
+        String json = "{\"elements\":[{\"id\":\"" + E1 + "\",\"documentation\":\"Handle [exceptions]\",\"name\":\"Clerk\",\"type\":\"BusinessActor\"}],"
+                + "\"relationships\":[{\"source\":\"" + E1 + "\",\"id\":\"" + R1 + "\",\"target\":\"" + E1 + "\",\"type\":\"AssociationRelationship\"}]}";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+        assertEquals(1, result.getElements().size());
+        assertEquals("BusinessActor", result.getElements().get(0).getType());
+        assertEquals("Clerk", result.getElements().get(0).getName());
+        assertEquals(E1, result.getElements().get(0).getId());
+        assertEquals(1, result.getRelationships().size());
+        assertEquals(E1, result.getRelationships().get(0).getSource());
+        assertEquals("AssociationRelationship", result.getRelationships().get(0).getType());
+    }
+
+    @Test
+    public void parseElements_nameContainingBracketsDoesNotTruncateArray() {
+        StringBuilder json = new StringBuilder("{\"elements\":[");
+        for (int i = 0; i < 37; i++) {
+            if (i > 0) {
+                json.append(',');
+            }
+            String hex = String.format("%032x", i + 1);
+            json.append("{\"name\":\"Step [").append(i).append("]\",\"type\":\"BusinessProcess\",\"id\":\"id-").append(hex).append("\"}");
+        }
+        json.append("],\"relationships\":[{\"type\":\"TriggeringRelationship\",\"source\":\"id-")
+                .append(String.format("%032x", 1)).append("\",\"target\":\"id-")
+                .append(String.format("%032x", 2)).append("\"}]}");
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json.toString());
+        assertEquals(37, result.getElements().size());
+        assertEquals("Step [0]", result.getElements().get(0).getName());
+        assertEquals(1, result.getRelationships().size());
+    }
 }

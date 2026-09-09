@@ -425,6 +425,33 @@ public class ArchiMateImportFlowTest {
         assertEquals("Figure should be gone from the open view", 1, childCount(diagram));
     }
 
+    @Test
+    public void importDuplicateElementNames_stillAttachesRelationshipsUsingLlmIds() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        addNamedConcept(factory, model, "createBusinessRole", "Buyer", E2);
+        int before = countElementsInModel(model);
+
+        String newActorId = "id-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        String newRoleId = "id-ffffffffffffffffffffffffffffffff";
+        String newRelId = "id-dddddddddddddddddddddddddddddddd";
+        String json = "{\"elements\":["
+                + "{\"type\":\"BusinessActor\",\"name\":\"Customer\",\"id\":\"" + newActorId + "\"},"
+                + "{\"type\":\"BusinessRole\",\"name\":\"Buyer\",\"id\":\"" + newRoleId + "\"}"
+                + "],\"relationships\":["
+                + "{\"type\":\"AssignmentRelationship\",\"source\":\"" + newActorId + "\",\"target\":\"" + newRoleId
+                + "\",\"name\":\"\",\"id\":\"" + newRelId + "\"}]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+        importWithDiagram(parsed, model, null);
+
+        assertEquals("Existing elements must not be duplicated", before, countElementsInModel(model) - 1);
+        assertTrue(modelContainsId(model, E1));
+        assertTrue(modelContainsId(model, E2));
+        assertTrue("New relationship should land in the model", modelContainsId(model, newRelId));
+    }
+
     private static boolean modelContainsId(Object model, String id) throws Exception {
         Object folders = model.getClass().getMethod("getFolders").invoke(model);
         return folderContainsId(folders, id);
