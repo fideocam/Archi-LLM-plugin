@@ -49,6 +49,14 @@ public class ArchiMateSystemPromptTest {
     }
 
     @Test
+    public void systemPrompt_mentionsRenameKeepsId() {
+        String p = ArchiMateSystemPrompt.SYSTEM_PROMPT;
+        assertTrue("CHANGES should mention rename", p.toLowerCase().contains("rename"));
+        assertTrue("Rename should keep the existing id",
+                p.contains("SAME id") || p.contains("existing id") || p.contains("SAME \"id\""));
+    }
+
+    @Test
     public void systemPrompt_mentionsFragmentAndMultipleElements() {
         String p = ArchiMateSystemPrompt.SYSTEM_PROMPT;
         assertTrue("Should mention fragment or multiple elements for process/service", p.contains("multiple") || p.contains("fragment"));

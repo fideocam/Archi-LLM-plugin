@@ -191,4 +191,18 @@ public class EnterpriseArchitectTasksTest {
         assertUserMessageWellFormed("task10", prompt);
     }
 
+    @Test
+    public void renameByChangingNames_classifiedAsChangesNotAnalysis() {
+        String prompt = "Change application component names by removing xxx text from them";
+        assertFalse(AnalysisPromptIntent.likelyAnalysisOnly(prompt));
+        assertUserMessageWellFormed("rename", prompt);
+    }
+
+    @Test
+    public void changeImpactQuestion_stillClassifiedAsAnalysis() {
+        String prompt = "What business processes are affected by a change to this application?";
+        assertTrue(AnalysisPromptIntent.likelyAnalysisOnly(prompt));
+        assertUserMessageWellFormed("impact-change", prompt);
+    }
+
 }

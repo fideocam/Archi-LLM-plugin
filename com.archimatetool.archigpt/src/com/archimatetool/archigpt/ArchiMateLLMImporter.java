@@ -31,12 +31,14 @@ import com.archimatetool.model.IArchimateFactory;
 import com.archimatetool.model.IArchimateModel;
 import com.archimatetool.model.IArchimatePackage;
 import com.archimatetool.model.IArchimateRelationship;
+import com.archimatetool.model.IBounds;
 import com.archimatetool.model.IConnectable;
 import com.archimatetool.model.IDiagramModel;
 import com.archimatetool.model.IDiagramModelArchimateConnection;
 import com.archimatetool.model.IDiagramModelArchimateObject;
 import com.archimatetool.model.IDiagramModelConnection;
 import com.archimatetool.model.IDiagramModelContainer;
+import com.archimatetool.model.IDiagramModelObject;
 import com.archimatetool.model.IFolder;
 import com.archimatetool.model.FolderType;
 
@@ -50,6 +52,13 @@ public final class ArchiMateLLMImporter {
 
     /** ArchiMate/Archi identifier format: id- plus 32 hex chars (xs:ID / NCName friendly). */
     private static final Pattern ARCHIMATE_ID = Pattern.compile("id-[0-9a-fA-F]{32}");
+
+    private static final int DEFAULT_ELEMENT_WIDTH = 120;
+    private static final int DEFAULT_ELEMENT_HEIGHT = 55;
+    private static final int DEFAULT_GAP = 25;
+    private static final int EMPTY_DIAGRAM_X = 50;
+    private static final int EMPTY_DIAGRAM_Y = 50;
+    private static final int CANVAS_MARGIN = 10;
 
     private ArchiMateLLMImporter() {}
 
@@ -93,15 +102,15 @@ public final class ArchiMateLLMImporter {
      * Import the validated result into the given model (uses default folders per type).
      * Call ArchiMateSchemaValidator.validate() before calling this.
      */
-    public static void importIntoModel(ArchiMateLLMResult result, IArchimateModel model) {
-        importIntoModel(result, model, null, null);
+    public static ImportStats importIntoModel(ArchiMateLLMResult result, IArchimateModel model) {
+        return importIntoModel(result, model, null, null);
     }
 
     /**
      * Import with optional target folder (no diagram).
      */
-    public static void importIntoModel(ArchiMateLLMResult result, IArchimateModel model, IFolder targetFolder) {
-        importIntoModel(result, model, targetFolder, null);
+    public static ImportStats importIntoModel(ArchiMateLLMResult result, IArchimateModel model, IFolder targetFolder) {
+        return importIntoModel(result, model, targetFolder, null);
     }
 
     /**
@@ -110,16 +119,37 @@ public final class ArchiMateLLMImporter {
      * are added as figures and new relationships as arrows when both ends already have (or just
      * received) figures on that view.
      */
-    public static void importIntoModel(ArchiMateLLMResult result, IArchimateModel model, IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
+    public static ImportStats importIntoModel(ArchiMateLLMResult result, IArchimateModel model, IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
+        ImportStats stats = new ImportStats();
         CommandStack stack = getCommandStack(model);
         if (stack != null) {
             NonNotifyingCompoundCommand compound = new NonNotifyingCompoundCommand("ArchiGPT: apply LLM changes");
-            buildImportCommands(compound, result, model, targetFolder, targetDiagram);
+            buildImportCommands(compound, result, model, targetFolder, targetDiagram, stats);
             if (!compound.getCommands().isEmpty()) {
                 stack.execute(compound);
             }
         } else {
-            runImportWithoutCommandStack(result, model, targetFolder, targetDiagram);
+            runImportWithoutCommandStack(result, model, targetFolder, targetDiagram, stats);
+        }
+        return stats;
+    }
+
+    /** Counts of what the importer actually applied (creates vs in-place renames). */
+    public static final class ImportStats {
+        private int createdElements;
+        private int renamedElements;
+        private int createdRelationships;
+
+        public int getCreatedElements() {
+            return createdElements;
+        }
+
+        public int getRenamedElements() {
+            return renamedElements;
+        }
+
+        public int getCreatedRelationships() {
+            return createdRelationships;
         }
     }
 
@@ -136,53 +166,25 @@ public final class ArchiMateLLMImporter {
     }
 
     private static void buildImportCommands(NonNotifyingCompoundCommand compound, ArchiMateLLMResult result,
-            IArchimateModel model, IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
+            IArchimateModel model, IFolder targetFolder, IArchimateDiagramModel targetDiagram, ImportStats stats) {
         Map<String, IArchimateConcept> idToConcept = new HashMap<>();
         Map<String, IArchimateRelationship> idToRelationship = new HashMap<>();
         Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures = new HashMap<>();
 
-        int diagramY = 50;
-        final int elementWidth = 120;
-        final int elementHeight = 55;
-        final int gap = 25;
+        int[] origin = newFigureOrigin(targetDiagram, DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
+        int diagramX = origin[0];
+        int diagramY = origin[1];
 
         for (ArchiMateLLMResult.ElementSpec e : result.getElements()) {
-            String normalizedType = ArchiMateSchemaValidator.normalizeElementType(e.getType());
-            EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(normalizedType);
-            if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
+            PreparedElement prepared = prepareElement(e, model, targetFolder, idToConcept, compound, stats);
+            if (prepared == null || !prepared.created || targetDiagram == null || result.getDiagram() != null) {
                 continue;
             }
-            String name = e.getName() != null ? e.getName() : "";
-            IArchimateElement existing = existingElementForSpec(model, eClass, name, e.getId());
-            if (existing != null) {
-                rememberConceptId(idToConcept, e.getId(), existing);
-                continue;
-            }
-            IArchimateElement element = (IArchimateElement) IArchimateFactory.eINSTANCE.create(eClass);
-            element.setName(name);
-            String elementId = ensureArchiMateId(e.getId());
-            element.setId(elementId);
-            IFolder defaultFolder = model.getDefaultFolderForObject(element);
-            IFolder folder = defaultFolder;
-            if (targetFolder != null && defaultFolder != null && targetFolder.getType() == defaultFolder.getType()) {
-                folder = targetFolder;
-            }
-            if (folder != null) {
-                compound.add(new AddListMemberCommand("ArchiGPT: add element", folder.getElements(), element));
-            }
-            idToConcept.put(elementId, element);
-            if (!elementId.equals(e.getId()) && e.getId() != null && !e.getId().isEmpty()) {
-                idToConcept.put(e.getId().trim(), element);
-            }
-
-            if (targetDiagram != null && result.getDiagram() == null) {
-                IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
-                dmo.setArchimateElement(element);
-                dmo.setBounds(50, diagramY, elementWidth, elementHeight);
-                compound.add(new AddDiagramObjectCommand(targetDiagram, dmo));
-                pendingFigures.put(element, dmo);
-                diagramY += elementHeight + gap;
-            }
+            IDiagramModelArchimateObject dmo = createFigure(prepared.element, diagramX, diagramY,
+                    DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
+            compound.add(new AddDiagramObjectCommand(targetDiagram, dmo));
+            pendingFigures.put(prepared.element, dmo);
+            diagramY += DEFAULT_ELEMENT_HEIGHT + DEFAULT_GAP;
         }
 
         for (ArchiMateLLMResult.RelationshipSpec r : result.getRelationships()) {
@@ -212,10 +214,13 @@ public final class ArchiMateLLMImporter {
             if (!relId.equals(r.getId()) && r.getId() != null && !r.getId().isEmpty()) {
                 idToRelationship.put(r.getId().trim(), rel);
             }
-            IFolder relFolder = model.getDefaultFolderForObject(rel);
+            IFolder relFolder = resolveFolderFor(model, rel, null);
             rel.setSource(source);
             rel.setTarget(target);
             compound.add(new AddRelationshipCommand(rel, source, target, relFolder));
+            if (stats != null) {
+                stats.createdRelationships++;
+            }
             if (targetDiagram != null && result.getDiagram() == null) {
                 appendRelationshipArrowCommand(compound, targetDiagram, source, target, rel, pendingFigures);
             }
@@ -294,6 +299,35 @@ public final class ArchiMateLLMImporter {
                 relFolder.getElements().remove(rel);
             }
             rel.disconnect();
+        }
+    }
+
+    /** Undoable name update for an existing concept (rename). */
+    private static final class SetNameCommand extends Command {
+        private final IArchimateConcept concept;
+        private final String newName;
+        private String oldName;
+
+        SetNameCommand(IArchimateConcept concept, String newName) {
+            super("ArchiGPT: rename");
+            this.concept = concept;
+            this.newName = newName != null ? newName : "";
+        }
+
+        @Override
+        public boolean canExecute() {
+            return concept != null && namesDiffer(concept.getName(), newName);
+        }
+
+        @Override
+        public void execute() {
+            oldName = concept.getName();
+            concept.setName(newName);
+        }
+
+        @Override
+        public void undo() {
+            concept.setName(oldName);
         }
     }
 
@@ -433,53 +467,25 @@ public final class ArchiMateLLMImporter {
      * Same mutations as {@link #buildImportCommands} but without CommandStack (e.g. headless tests).
      */
     private static void runImportWithoutCommandStack(ArchiMateLLMResult result, IArchimateModel model,
-            IFolder targetFolder, IArchimateDiagramModel targetDiagram) {
+            IFolder targetFolder, IArchimateDiagramModel targetDiagram, ImportStats stats) {
         Map<String, IArchimateConcept> idToConcept = new HashMap<>();
         Map<String, IArchimateRelationship> idToRelationship = new HashMap<>();
         Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures = new HashMap<>();
 
-        int diagramY = 50;
-        final int elementWidth = 120;
-        final int elementHeight = 55;
-        final int gap = 25;
+        int[] origin = newFigureOrigin(targetDiagram, DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
+        int diagramX = origin[0];
+        int diagramY = origin[1];
 
         for (ArchiMateLLMResult.ElementSpec e : result.getElements()) {
-            String normalizedType = ArchiMateSchemaValidator.normalizeElementType(e.getType());
-            EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(normalizedType);
-            if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
+            PreparedElement prepared = prepareElement(e, model, targetFolder, idToConcept, null, stats);
+            if (prepared == null || !prepared.created || targetDiagram == null || result.getDiagram() != null) {
                 continue;
             }
-            String name = e.getName() != null ? e.getName() : "";
-            IArchimateElement existing = existingElementForSpec(model, eClass, name, e.getId());
-            if (existing != null) {
-                rememberConceptId(idToConcept, e.getId(), existing);
-                continue;
-            }
-            IArchimateElement element = (IArchimateElement) IArchimateFactory.eINSTANCE.create(eClass);
-            element.setName(name);
-            String elementId = ensureArchiMateId(e.getId());
-            element.setId(elementId);
-            IFolder defaultFolder = model.getDefaultFolderForObject(element);
-            IFolder folder = defaultFolder;
-            if (targetFolder != null && defaultFolder != null && targetFolder.getType() == defaultFolder.getType()) {
-                folder = targetFolder;
-            }
-            if (folder != null) {
-                folder.getElements().add(element);
-            }
-            idToConcept.put(elementId, element);
-            if (!elementId.equals(e.getId()) && e.getId() != null && !e.getId().isEmpty()) {
-                idToConcept.put(e.getId().trim(), element);
-            }
-
-            if (targetDiagram != null && result.getDiagram() == null) {
-                IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
-                dmo.setArchimateElement(element);
-                dmo.setBounds(50, diagramY, elementWidth, elementHeight);
-                targetDiagram.getChildren().add(dmo);
-                pendingFigures.put(element, dmo);
-                diagramY += elementHeight + gap;
-            }
+            IDiagramModelArchimateObject dmo = createFigure(prepared.element, diagramX, diagramY,
+                    DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
+            targetDiagram.getChildren().add(dmo);
+            pendingFigures.put(prepared.element, dmo);
+            diagramY += DEFAULT_ELEMENT_HEIGHT + DEFAULT_GAP;
         }
 
         for (ArchiMateLLMResult.RelationshipSpec r : result.getRelationships()) {
@@ -511,9 +517,12 @@ public final class ArchiMateLLMImporter {
             }
             rel.setSource(source);
             rel.setTarget(target);
-            IFolder relFolder = model.getDefaultFolderForObject(rel);
+            IFolder relFolder = resolveFolderFor(model, rel, null);
             if (relFolder != null) {
                 relFolder.getElements().add(rel);
+            }
+            if (stats != null) {
+                stats.createdRelationships++;
             }
             if (targetDiagram != null && result.getDiagram() == null) {
                 addArchimateConnectionNow(targetDiagram, source, target, rel, pendingFigures);
@@ -560,6 +569,7 @@ public final class ArchiMateLLMImporter {
             Map<String, IArchimateConcept> idToConcept, Map<String, IArchimateRelationship> idToRelationship) {
         if (diagram == null || spec == null) return;
         Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
+        int[] nodeDelta = nodeTranslationToClearExisting(diagram, spec, model, idToConcept);
         for (ArchiMateLLMResult.DiagramNodeSpec node : spec.getNodes()) {
             String elementId = node.getElementId();
             if (elementId == null || elementId.isEmpty()) continue;
@@ -568,9 +578,15 @@ public final class ArchiMateLLMImporter {
                 concept = findConceptById(model, elementId);
             }
             if (!(concept instanceof IArchimateElement)) continue;
-            IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
-            dmo.setArchimateElement((IArchimateElement) concept);
-            dmo.setBounds(node.getX(), node.getY(), node.getWidth(), node.getHeight());
+            IArchimateElement element = (IArchimateElement) concept;
+            IDiagramModelArchimateObject existingFig = findFigureInChildren(diagram, element);
+            if (existingFig != null) {
+                elementIdToDiagramObject.put(elementId, existingFig);
+                continue;
+            }
+            int x = node.getX() + nodeDelta[0];
+            int y = node.getY() + nodeDelta[1];
+            IDiagramModelArchimateObject dmo = createFigure(element, x, y, node.getWidth(), node.getHeight());
             compound.add(new AddDiagramObjectCommand(diagram, dmo));
             elementIdToDiagramObject.put(elementId, dmo);
         }
@@ -1028,6 +1044,7 @@ public final class ArchiMateLLMImporter {
             Map<String, IArchimateConcept> idToConcept, Map<String, IArchimateRelationship> idToRelationship) {
         if (diagram == null || spec == null) return;
         Map<String, IDiagramModelArchimateObject> elementIdToDiagramObject = new HashMap<>();
+        int[] nodeDelta = nodeTranslationToClearExisting(diagram, spec, model, idToConcept);
         for (ArchiMateLLMResult.DiagramNodeSpec node : spec.getNodes()) {
             String elementId = node.getElementId();
             if (elementId == null || elementId.isEmpty()) continue;
@@ -1036,9 +1053,15 @@ public final class ArchiMateLLMImporter {
                 concept = findConceptById(model, elementId);
             }
             if (!(concept instanceof IArchimateElement)) continue;
-            IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
-            dmo.setArchimateElement((IArchimateElement) concept);
-            dmo.setBounds(node.getX(), node.getY(), node.getWidth(), node.getHeight());
+            IArchimateElement element = (IArchimateElement) concept;
+            IDiagramModelArchimateObject existingFig = findFigureInChildren(diagram, element);
+            if (existingFig != null) {
+                elementIdToDiagramObject.put(elementId, existingFig);
+                continue;
+            }
+            int x = node.getX() + nodeDelta[0];
+            int y = node.getY() + nodeDelta[1];
+            IDiagramModelArchimateObject dmo = createFigure(element, x, y, node.getWidth(), node.getHeight());
             diagram.getChildren().add(dmo);
             elementIdToDiagramObject.put(elementId, dmo);
         }
@@ -1116,14 +1139,236 @@ public final class ArchiMateLLMImporter {
         }
     }
 
+    private static final class PreparedElement {
+        final IArchimateElement element;
+        final boolean created;
+
+        PreparedElement(IArchimateElement element, boolean created) {
+            this.element = element;
+            this.created = created;
+        }
+    }
+
     /**
-     * Element already in the model for this spec: same id, or same type+name (LLM re-listing context).
-     * Callers must still map the LLM's id onto that element so relationships in this payload resolve.
+     * Resolve an element spec to a model object: rename in place when the id already exists,
+     * otherwise create it in a folder so it appears in the model tree, not only on a view.
+     */
+    private static PreparedElement prepareElement(ArchiMateLLMResult.ElementSpec e, IArchimateModel model,
+            IFolder targetFolder, Map<String, IArchimateConcept> idToConcept, NonNotifyingCompoundCommand compound,
+            ImportStats stats) {
+        String normalizedType = ArchiMateSchemaValidator.normalizeElementType(e.getType());
+        EClass eClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(normalizedType);
+        if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
+            return null;
+        }
+        String name = e.getName() != null ? e.getName() : "";
+        IArchimateElement existing = existingElementForSpec(model, eClass, name, e.getId());
+        if (existing != null) {
+            rememberConceptId(idToConcept, e.getId(), existing);
+            if (eClass.isInstance(existing) && namesDiffer(existing.getName(), name)) {
+                applyRename(compound, existing, name);
+                if (stats != null) {
+                    stats.renamedElements++;
+                }
+            }
+            return new PreparedElement(existing, false);
+        }
+        IArchimateElement element = (IArchimateElement) IArchimateFactory.eINSTANCE.create(eClass);
+        element.setName(name);
+        String elementId = ensureArchiMateId(e.getId());
+        element.setId(elementId);
+        IFolder folder = resolveFolderFor(model, element, targetFolder);
+        if (folder == null) {
+            return null;
+        }
+        if (compound != null) {
+            compound.add(new AddListMemberCommand("ArchiGPT: add element", folder.getElements(), element));
+        } else {
+            folder.getElements().add(element);
+        }
+        idToConcept.put(elementId, element);
+        if (!elementId.equals(e.getId()) && e.getId() != null && !e.getId().isEmpty()) {
+            idToConcept.put(e.getId().trim(), element);
+        }
+        if (stats != null) {
+            stats.createdElements++;
+        }
+        return new PreparedElement(element, true);
+    }
+
+    private static void applyRename(NonNotifyingCompoundCommand compound, IArchimateConcept concept, String name) {
+        if (compound != null) {
+            compound.add(new SetNameCommand(concept, name));
+        } else {
+            concept.setName(name);
+        }
+    }
+
+    private static boolean namesDiffer(String a, String b) {
+        String left = a != null ? a : "";
+        String right = b != null ? b : "";
+        return !left.equals(right);
+    }
+
+    /**
+     * Folder that should contain a new concept. Never returns a diagrams folder; falls back so
+     * new elements are not left as view-only figures.
+     */
+    private static IFolder resolveFolderFor(IArchimateModel model, IArchimateConcept object, IFolder targetFolder) {
+        if (model == null || object == null) {
+            return null;
+        }
+        IFolder defaultFolder = model.getDefaultFolderForObject(object);
+        if (targetFolder != null && defaultFolder != null && targetFolder.getType() == defaultFolder.getType()) {
+            return targetFolder;
+        }
+        if (defaultFolder != null) {
+            return defaultFolder;
+        }
+        IFolder user = model.getFolder(FolderType.USER);
+        if (user != null) {
+            return user;
+        }
+        IFolder other = model.getFolder(FolderType.OTHER);
+        if (other != null) {
+            return other;
+        }
+        if (model.getFolders() != null) {
+            for (IFolder f : model.getFolders()) {
+                if (f.getType() != FolderType.DIAGRAMS) {
+                    return f;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static IDiagramModelArchimateObject createFigure(IArchimateElement element, int x, int y, int width,
+            int height) {
+        IDiagramModelArchimateObject dmo = IArchimateFactory.eINSTANCE.createDiagramModelArchimateObject();
+        dmo.setArchimateElement(element);
+        dmo.setBounds(x, y, width, height);
+        return dmo;
+    }
+
+    /**
+     * Origin for new figures: empty view stays at (50,50); otherwise about 1/3 of an element size
+     * to the left and below the current occupied area so new objects are near existing ones without
+     * landing on top of them.
+     */
+    private static int[] newFigureOrigin(IDiagramModelContainer diagram, int elementWidth, int elementHeight) {
+        int[] occupied = occupiedBounds(diagram);
+        if (occupied == null) {
+            return new int[] { EMPTY_DIAGRAM_X, EMPTY_DIAGRAM_Y };
+        }
+        int dx = Math.max(1, elementWidth / 3);
+        int dy = Math.max(1, elementHeight / 3);
+        int x = occupied[0] - dx;
+        int y = occupied[3] + dy;
+        if (x < CANVAS_MARGIN) {
+            x = CANVAS_MARGIN;
+        }
+        return new int[] { x, y };
+    }
+
+    /**
+     * If the LLM's node coordinates overlap figures already on the view, shift the whole new
+     * group to {@link #newFigureOrigin} while keeping relative layout.
+     */
+    private static int[] nodeTranslationToClearExisting(IArchimateDiagramModel diagram,
+            ArchiMateLLMResult.DiagramSpec spec, IArchimateModel model,
+            Map<String, IArchimateConcept> idToConcept) {
+        if (diagram == null || spec == null || spec.getNodes().isEmpty()) {
+            return new int[] { 0, 0 };
+        }
+        int[] occupied = occupiedBounds(diagram);
+        if (occupied == null) {
+            return new int[] { 0, 0 };
+        }
+        int specMinX = Integer.MAX_VALUE;
+        int specMinY = Integer.MAX_VALUE;
+        boolean overlaps = false;
+        boolean anyNew = false;
+        for (ArchiMateLLMResult.DiagramNodeSpec node : spec.getNodes()) {
+            String elementId = node.getElementId();
+            IArchimateConcept concept = idToConcept != null ? idToConcept.get(elementId) : null;
+            if (concept == null) {
+                concept = findConceptById(model, elementId);
+            }
+            if (concept instanceof IArchimateElement
+                    && findFigureInChildren(diagram, (IArchimateElement) concept) != null) {
+                continue;
+            }
+            anyNew = true;
+            specMinX = Math.min(specMinX, node.getX());
+            specMinY = Math.min(specMinY, node.getY());
+            if (rectOverlaps(node.getX(), node.getY(), node.getWidth(), node.getHeight(), occupied)) {
+                overlaps = true;
+            }
+        }
+        if (!anyNew || !overlaps || specMinX == Integer.MAX_VALUE) {
+            return new int[] { 0, 0 };
+        }
+        int[] origin = newFigureOrigin(diagram, DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
+        return new int[] { origin[0] - specMinX, origin[1] - specMinY };
+    }
+
+    /** {minX, minY, maxRight, maxBottom} of all figures on the container, or null if none. */
+    private static int[] occupiedBounds(IDiagramModelContainer container) {
+        int[] acc = new int[] { Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE };
+        accumulateOccupied(container, acc);
+        if (acc[0] == Integer.MAX_VALUE) {
+            return null;
+        }
+        return acc;
+    }
+
+    private static void accumulateOccupied(IDiagramModelContainer container, int[] acc) {
+        if (container == null || container.getChildren() == null) {
+            return;
+        }
+        for (Object child : container.getChildren()) {
+            if (child instanceof IDiagramModelObject) {
+                IDiagramModelObject dmo = (IDiagramModelObject) child;
+                IBounds b = dmo.getBounds();
+                if (b != null) {
+                    int x = b.getX();
+                    int y = b.getY();
+                    int right = x + b.getWidth();
+                    int bottom = y + b.getHeight();
+                    if (x < acc[0]) {
+                        acc[0] = x;
+                    }
+                    if (y < acc[1]) {
+                        acc[1] = y;
+                    }
+                    if (right > acc[2]) {
+                        acc[2] = right;
+                    }
+                    if (bottom > acc[3]) {
+                        acc[3] = bottom;
+                    }
+                }
+            }
+            if (child instanceof IDiagramModelContainer) {
+                accumulateOccupied((IDiagramModelContainer) child, acc);
+            }
+        }
+    }
+
+    private static boolean rectOverlaps(int x, int y, int w, int h, int[] box) {
+        return x < box[2] && x + w > box[0] && y < box[3] && y + h > box[1];
+    }
+
+    /**
+     * Element already in the model for this spec: same id (rename keeps the id), or same type+name
+     * (LLM re-listing context). Callers must still map the LLM's id onto that element so
+     * relationships in this payload resolve.
      */
     private static IArchimateElement existingElementForSpec(IArchimateModel model, EClass eClass, String name,
             String llmId) {
         IArchimateConcept byId = findConceptById(model, llmId);
-        if (byId instanceof IArchimateElement && eClass != null && eClass.isInstance(byId)) {
+        if (byId instanceof IArchimateElement) {
             return (IArchimateElement) byId;
         }
         return findElementByTypeAndName(model, eClass, name);

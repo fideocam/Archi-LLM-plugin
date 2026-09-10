@@ -452,6 +452,74 @@ public class ArchiMateImportFlowTest {
         assertTrue("New relationship should land in the model", modelContainsId(model, newRelId));
     }
 
+    @Test
+    public void importRenameById_updatesNameWithoutDuplicating() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createApplicationComponent", "System xxx", E1);
+        int before = countElementsInModel(model);
+
+        String json = "{\"elements\":[{\"type\":\"ApplicationComponent\",\"name\":\"System\",\"id\":\"" + E1
+                + "\"}],\"relationships\":[]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+        importWithDiagram(parsed, model, null);
+
+        assertEquals("Rename must not create a second element", before, countElementsInModel(model));
+        assertEquals("System", nameOfId(model, E1));
+        assertTrue(modelContainsId(model, E1));
+    }
+
+    @Test
+    public void importWithTargetDiagram_newElementIsInModelFolderAndOffsetFromExisting() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object existing = addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        Object diagram = addEmptyDiagram(factory, model, "Open View");
+        addFigure(factory, diagram, existing);
+
+        String json = "{\"elements\":[{\"type\":\"BusinessRole\",\"name\":\"Buyer\",\"id\":\"" + E2
+                + "\"}],\"relationships\":[]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+        importWithDiagram(parsed, model, diagram);
+
+        assertTrue("New element must appear in the model tree (a folder), not only as a figure",
+                modelContainsId(model, E2));
+        Object created = findById(model, E2);
+        assertNotNull(created);
+        Object container = created.getClass().getMethod("eContainer").invoke(created);
+        assertTrue("Imported element must be contained by a folder",
+                Class.forName("com.archimatetool.model.IFolder").isInstance(container));
+        assertEquals(2, childCount(diagram));
+        int[] newBounds = figureBoundsForElementId(diagram, E2);
+        assertNotNull(newBounds);
+        assertFalse("New figure must not land on the existing (50,50) object",
+                newBounds[0] == 50 && newBounds[1] == 50);
+        assertTrue("New figure should sit left of or below the existing cluster",
+                newBounds[0] <= 50 || newBounds[1] >= 50 + 55);
+    }
+
+    @Test
+    public void importDiagramNodes_doesNotStackSecondFigureForElementAlreadyOnView() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object existing = addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        Object diagram = addEmptyDiagram(factory, model, "Existing View");
+        addFigure(factory, diagram, existing);
+        assertEquals(1, childCount(diagram));
+
+        String json = "{\"elements\":[{\"type\":\"BusinessActor\",\"name\":\"Customer\",\"id\":\"" + E1
+                + "\"}],\"relationships\":[],"
+                + "\"diagram\":{\"name\":\"Existing View\",\"viewpoint\":\"\",\"nodes\":["
+                + "{\"elementId\":\"" + E1 + "\",\"x\":50,\"y\":50,\"width\":120,\"height\":55}],\"connections\":[]}}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+        importWithDiagram(parsed, model, null);
+
+        assertEquals("Existing figure must not be duplicated on top of itself", 1, childCount(diagram));
+    }
+
     private static boolean modelContainsId(Object model, String id) throws Exception {
         Object folders = model.getClass().getMethod("getFolders").invoke(model);
         return folderContainsId(folders, id);
@@ -472,6 +540,63 @@ public class ArchiMateImportFlowTest {
             }
         }
         return false;
+    }
+
+    private static String nameOfId(Object model, String id) throws Exception {
+        Object found = findById(model, id);
+        if (found == null) {
+            return null;
+        }
+        Object name = found.getClass().getMethod("getName").invoke(found);
+        return name != null ? name.toString() : null;
+    }
+
+    private static Object findById(Object model, String id) throws Exception {
+        Object folders = model.getClass().getMethod("getFolders").invoke(model);
+        return findByIdInFolders(folders, id);
+    }
+
+    private static Object findByIdInFolders(Object folders, String id) throws Exception {
+        for (Object folder : (Iterable<?>) folders) {
+            Object elements = folder.getClass().getMethod("getElements").invoke(folder);
+            for (Object el : (Iterable<?>) elements) {
+                Object existing = el.getClass().getMethod("getId").invoke(el);
+                if (id.equals(existing)) {
+                    return el;
+                }
+            }
+            Object childFolders = folder.getClass().getMethod("getFolders").invoke(folder);
+            if (childFolders instanceof Iterable) {
+                Object nested = findByIdInFolders(childFolders, id);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static int[] figureBoundsForElementId(Object diagram, String elementId) throws Exception {
+        for (Object child : (List<?>) diagram.getClass().getMethod("getChildren").invoke(diagram)) {
+            Object element;
+            try {
+                element = child.getClass().getMethod("getArchimateElement").invoke(child);
+            } catch (NoSuchMethodException missing) {
+                continue;
+            }
+            if (element == null) {
+                continue;
+            }
+            Object id = element.getClass().getMethod("getId").invoke(element);
+            if (!elementId.equals(id)) {
+                continue;
+            }
+            Object bounds = child.getClass().getMethod("getBounds").invoke(child);
+            int x = (Integer) bounds.getClass().getMethod("getX").invoke(bounds);
+            int y = (Integer) bounds.getClass().getMethod("getY").invoke(bounds);
+            return new int[] { x, y };
+        }
+        return null;
     }
 
     private static Object factory() throws Exception {
