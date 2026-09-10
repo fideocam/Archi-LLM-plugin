@@ -14,10 +14,33 @@ public final class ArchiMateLLMResultParser {
 
     private static final Pattern ERROR_FIELD = Pattern.compile("\"error\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
+    private static final Pattern CHANGES_KEY = Pattern.compile(
+            "\"(elements|relationships|removeElementIds|removeRelationshipIds|removeDiagramNames|removeElementFromDiagramIds|removeRelationshipFromDiagramIds)\"\\s*:\\s*\\[|\"diagram\"\\s*:\\s*\\{");
+
+    /**
+     * True when the reply looks like ArchiGPT CHANGES JSON (mutation keys followed by {@code [} or a diagram object),
+     * not analysis prose that happens to mention the word "elements".
+     */
+    public static boolean looksLikeChangesJson(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return false;
+        }
+        if (raw.length() > MutationPolicy.MAX_REPLY_CHARS) {
+            return false;
+        }
+        String json = extractJson(raw);
+        return CHANGES_KEY.matcher(json).find();
+    }
+
     /**
      * Extract JSON from markdown code block if present, then parse into ArchiMateLLMResult.
      */
     public static ArchiMateLLMResult parse(String rawResponse) {
+        if (rawResponse != null && rawResponse.length() > MutationPolicy.MAX_REPLY_CHARS) {
+            ArchiMateLLMResult oversized = new ArchiMateLLMResult();
+            oversized.setError("Reply too large to apply as model changes.");
+            return oversized;
+        }
         String json = extractJson(rawResponse);
         ArchiMateLLMResult result = new ArchiMateLLMResult();
 
@@ -190,12 +213,9 @@ public final class ArchiMateLLMResultParser {
             int end = findMatchingBracket(s, i);
             if (end <= i) continue;
             String candidate = s.substring(i, end + 1);
-            // Must be the CHANGES payload (add, new view, or remove)
-            if (candidate.contains("\"elements\"") || candidate.contains("\"diagram\"")
-                    || candidate.contains("\"removeElementIds\"") || candidate.contains("\"removeRelationshipIds\"")
-                    || candidate.contains("\"removeDiagramNames\"")
-                    || candidate.contains("\"removeElementFromDiagramIds\"")
-                    || candidate.contains("\"removeRelationshipFromDiagramIds\"")) {
+            // Mutation key followed by array/object — not the word "elements" in analysis prose.
+            // Covers adds, new views, and remove-only payloads (including remove-from-diagram).
+            if (CHANGES_KEY.matcher(candidate).find()) {
                 return candidate;
             }
         }

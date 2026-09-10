@@ -158,6 +158,27 @@ public class ArchiMateLLMResultParserTest {
     }
 
     @Test
+    public void looksLikeChangesJson_falseForAnalysis() {
+        assertFalse(ArchiMateLLMResultParser.looksLikeChangesJson("The model contains a Customer actor."));
+        assertFalse(ArchiMateLLMResultParser.looksLikeChangesJson("There are several elements and relationships in this model."));
+        assertTrue(ArchiMateLLMResultParser.looksLikeChangesJson("{\"elements\":[],\"relationships\":[]}"));
+    }
+
+    @Test
+    public void parse_oversizedReply_setsError() {
+        StringBuilder sb = new StringBuilder("{\"elements\":[");
+        for (int i = 0; i < MutationPolicy.MAX_REPLY_CHARS + 10; i++) {
+            sb.append('x');
+        }
+        sb.append("]}");
+        String raw = sb.toString();
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(raw);
+        assertEquals("Reply too large to apply as model changes.", result.getError());
+        assertTrue(result.getElements().isEmpty());
+        assertFalse(ArchiMateLLMResultParser.looksLikeChangesJson(raw));
+    }
+
+    @Test
     public void parseRemoveOnlyJsonWithoutElementsKey() {
         String json = "Please apply this.\n{\"removeElementIds\":[\"" + E1 + "\"]}";
         ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);

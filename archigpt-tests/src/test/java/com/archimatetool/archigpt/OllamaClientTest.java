@@ -132,6 +132,13 @@ public class OllamaClientTest {
     }
 
     @Test
+    public void sanitizeModelName_dropsQuotesAndControls() {
+        assertEquals(OllamaClient.DEFAULT_MODEL, OllamaClient.sanitizeModelName("x\"y"));
+        assertEquals(OllamaClient.DEFAULT_MODEL, OllamaClient.sanitizeModelName("x\ny"));
+        assertEquals("mistral:7b", OllamaClient.sanitizeModelName(" mistral:7b "));
+    }
+
+    @Test
     public void fetchReportedContextTokens_httpErrorReturnsZero() throws IOException {
         responseCode = 400;
         responseBody = "{\"error\":\"unknown model\"}";

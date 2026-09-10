@@ -57,7 +57,7 @@ Skills complement:
 
 ### With ArchiGPT / Ollama (this repo)
 
-ArchiGPT sends a **fixed system prompt** from `com.archimatetool.archigpt/system-prompt.txt` plus the model XML and user request. It does **not** today load external skill files automatically. To “use a skill” with ArchiGPT you can:
+ArchiGPT sends a **fixed system prompt** from `com.archimatetool.archigpt/system-prompt.txt` plus the model XML and user request. Company Markdown in `~/.archigpt/knowledge/` is injected as COMPANY KNOWLEDGE (see [RAG_OLLAMA.md](RAG_OLLAMA.md)). It does **not** today load Skillfish `SKILL.md` files automatically. To “use a skill” with ArchiGPT you can:
 
 1. **Edit the system prompt** — merge skill content into `system-prompt.txt` (good for behaviors that must always apply to ArchiMate JSON/XML).  
 2. **Put skill text in the user message** — prepend “Follow these rules: …” in the ArchiGPT prompt box (good for experiments without redeploying the plugin).  

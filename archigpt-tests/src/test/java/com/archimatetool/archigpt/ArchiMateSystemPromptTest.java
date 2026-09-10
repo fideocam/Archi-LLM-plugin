@@ -34,6 +34,12 @@ public class ArchiMateSystemPromptTest {
     }
 
     @Test
+    public void systemPrompt_mentionsCompanyKnowledge() {
+        String p = ArchiMateSystemPrompt.SYSTEM_PROMPT;
+        assertTrue(p.contains("COMPANY KNOWLEDGE"));
+    }
+
+    @Test
     public void systemPrompt_containsJsonStructure() {
         String p = ArchiMateSystemPrompt.SYSTEM_PROMPT;
         assertTrue("Should describe elements array", p.contains("\"elements\""));

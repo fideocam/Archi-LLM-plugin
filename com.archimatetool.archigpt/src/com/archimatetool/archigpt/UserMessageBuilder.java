@@ -26,11 +26,21 @@ public final class UserMessageBuilder {
      * preserve the start of the context). Then a clear delimiter and the user request + selection.
      */
     public static String buildUserMessage(String selectionContext, String modelXml, String prompt) {
+        return buildUserMessage(selectionContext, modelXml, prompt, null);
+    }
+
+    /**
+     * @param knowledge optional COMPANY KNOWLEDGE block (already formatted); inserted after the model XML
+     */
+    public static String buildUserMessage(String selectionContext, String modelXml, String prompt, String knowledge) {
         StringBuilder sb = new StringBuilder();
         if (modelXml != null && !modelXml.isEmpty()) {
             sb.append("ArchiMate model (Open Exchange XML):\n\n").append(modelXml).append("\n\n");
         }
         sb.append("--- END OF MODEL ---\n\n");
+        if (knowledge != null && !knowledge.trim().isEmpty()) {
+            sb.append(knowledge.trim()).append("\n\n");
+        }
         sb.append("User request: ").append(prompt != null ? prompt : "").append("\n\n");
         if (selectionContext != null && !selectionContext.isEmpty()) {
             sb.append(selectionContext);
@@ -40,8 +50,13 @@ public final class UserMessageBuilder {
 
     /** Approximate user-message size excluding model XML (for context budgeting). */
     public static int estimateNonXmlOverheadChars(String selectionContext, String prompt) {
+        return estimateNonXmlOverheadChars(selectionContext, prompt, null);
+    }
+
+    public static int estimateNonXmlOverheadChars(String selectionContext, String prompt, String knowledge) {
         int sc = selectionContext != null ? selectionContext.length() : 0;
         int pr = prompt != null ? prompt.length() : 0;
-        return sc + pr + 120;
+        int kn = knowledge != null ? knowledge.length() : 0;
+        return sc + pr + kn + 160;
     }
 }
