@@ -57,6 +57,15 @@ public class ArchiMateSystemPromptTest {
     }
 
     @Test
+    public void systemPrompt_mentionsDocumentationField() {
+        String p = ArchiMateSystemPrompt.SYSTEM_PROMPT;
+        assertTrue("CHANGES should mention documentation", p.toLowerCase().contains("documentation"));
+        assertTrue("JSON schema should include a documentation field", p.contains("\"documentation\""));
+        assertTrue("Prompt should treat documentation edits as CHANGES",
+                p.contains("DOCUMENTATION") || p.toLowerCase().contains("add/update documentation"));
+    }
+
+    @Test
     public void systemPrompt_mentionsFragmentAndMultipleElements() {
         String p = ArchiMateSystemPrompt.SYSTEM_PROMPT;
         assertTrue("Should mention fragment or multiple elements for process/service", p.contains("multiple") || p.contains("fragment"));

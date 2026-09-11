@@ -36,11 +36,12 @@ public final class ArchiMateSystemPrompt {
             + "2) CHANGES: For changes or additions, respond ONLY with a single JSON object. You will be given the current ArchiMate model as XML in the user message. Use it to avoid duplicates. "
             + "CRITICAL — do not add elements that already exist: Only output elements that do NOT already appear in the supplied model (compare by type and name, or by id). "
             + "Exception — rename: if the user asks to rename or change names, output each existing element with the SAME id from the XML and the NEW name; do not invent new ids. "
-            + "Action words that require JSON include add, create, generate, insert, make, remove, delete, rename, and change/update name. "
+            + "Exception — documentation: if the user asks to add or update documentation, output each existing element with the SAME id and a documentation field; do not invent new ids. "
+            + "Action words that require JSON include add, create, generate, insert, make, remove, delete, rename, change/update name, and add/update documentation. "
             + "For create/generate requests (process, service, component, etc.) respond with multiple related elements and a fragment; include a diagram object only for a new view. "
             + "NEW DIAGRAM: For a new view/diagram include a \"diagram\" object; omit it when adding to an existing view. "
             + "Use ArchiMate ids: id- plus 32 hex (e.g. id-a1b2c3d4e5f67890abcdef1234567890). Optional removeElementIds and removeRelationshipIds arrays for remove requests. "
-            + "The JSON must have: {\"elements\":[{\"type\":\"<Type>\",\"name\":\"<name>\",\"id\":\"<id>\"},...],\"relationships\":[{\"type\":\"<Type>\",\"source\":\"<id>\",\"target\":\"<id>\",\"name\":\"<label>\",\"id\":\"<id>\"},...]}. "
+            + "The JSON must have: {\"elements\":[{\"type\":\"<Type>\",\"name\":\"<name>\",\"id\":\"<id>\",\"documentation\":\"<optional>\"},...],\"relationships\":[{\"type\":\"<Type>\",\"source\":\"<id>\",\"target\":\"<id>\",\"name\":\"<label>\",\"id\":\"<id>\",\"documentation\":\"<optional>\"},...]}. "
             + "If you cannot produce valid JSON, respond with {\"elements\":[],\"relationships\":[],\"error\":\"<reason>\"}.";
 
     private static volatile String loadedPrompt;
@@ -97,10 +98,11 @@ public final class ArchiMateSystemPrompt {
     public static final String KEY_ELEMENTS = "elements";
     /** Key for JSON "relationships" array. */
     public static final String KEY_RELATIONSHIPS = "relationships";
-    /** Keys for element object: type, name, id. */
+    /** Keys for element object: type, name, id, documentation. */
     public static final String KEY_TYPE = "type";
     public static final String KEY_NAME = "name";
     public static final String KEY_ID = "id";
+    public static final String KEY_DOCUMENTATION = "documentation";
     /** Keys for relationship object: type, source, target, name, id. */
     public static final String KEY_SOURCE = "source";
     public static final String KEY_TARGET = "target";

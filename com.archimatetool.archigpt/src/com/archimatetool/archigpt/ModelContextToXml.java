@@ -89,9 +89,7 @@ public final class ModelContextToXml {
         sb.append("    <folder name=\"").append(escape(name)).append("\" type=\"").append(escape(typeName)).append("\">\n");
         if (folder.getElements() != null) {
             for (EObject e : folder.getElements()) {
-                if (e instanceof IArchimateElement) {
-                    appendElement(sb, (IArchimateElement) e, 3);
-                }
+                appendFolderMember(sb, e, 3);
             }
         }
         sb.append("    </folder>\n");
@@ -226,9 +224,7 @@ public final class ModelContextToXml {
         String typeName = folder.getType() != null ? folder.getType().getName() : "";
         sb.append(pad).append("<folder name=\"").append(escape(name)).append("\" type=\"").append(escape(typeName)).append("\">\n");
         for (EObject e : folder.getElements()) {
-            if (e instanceof IArchimateElement) {
-                appendElement(sb, (IArchimateElement) e, indent + 1);
-            }
+            appendFolderMember(sb, e, indent + 1);
         }
         appendFolders(sb, folder.getFolders(), indent + 1);
         sb.append(pad).append("</folder>\n");
@@ -309,9 +305,7 @@ public final class ModelContextToXml {
             String typeName = folder.getType() != null ? folder.getType().getName() : "";
             sb.append(pad).append("<folder name=\"").append(escape(name)).append("\" type=\"").append(escape(typeName)).append("\">\n");
             for (EObject e : folder.getElements()) {
-                if (e instanceof IArchimateElement) {
-                    appendElement(sb, (IArchimateElement) e, indent + 1);
-                }
+                appendFolderMember(sb, e, indent + 1);
             }
             appendFolders(sb, folder.getFolders(), indent + 1);
             sb.append(pad).append("</folder>\n");
@@ -400,24 +394,43 @@ public final class ModelContextToXml {
         return "";
     }
 
+    private static void appendFolderMember(StringBuilder sb, EObject obj, int indent) {
+        if (obj instanceof IArchimateRelationship) {
+            appendRelationship(sb, (IArchimateRelationship) obj, indent);
+        } else if (obj instanceof IArchimateElement) {
+            appendElement(sb, (IArchimateElement) obj, indent);
+        }
+    }
+
+    private static void appendRelationship(StringBuilder sb, IArchimateRelationship rel, int indent) {
+        String pad = repeat("  ", indent);
+        String type = rel.eClass().getName();
+        String name = rel.getName() != null ? rel.getName() : "";
+        String id = rel.getId() != null ? rel.getId() : "";
+        String srcId = rel.getSource() != null && rel.getSource().getId() != null ? rel.getSource().getId() : "";
+        String tgtId = rel.getTarget() != null && rel.getTarget().getId() != null ? rel.getTarget().getId() : "";
+        String attrs = "type=\"" + escape(type) + "\" name=\"" + escape(name) + "\" id=\"" + escape(id)
+                + "\" source=\"" + escape(srcId) + "\" target=\"" + escape(tgtId) + "\"";
+        appendTaggedConcept(sb, pad, "relationship", attrs, rel.getDocumentation());
+    }
+
     private static void appendElement(StringBuilder sb, IArchimateElement element, int indent) {
         String pad = repeat("  ", indent);
-        if (element instanceof IArchimateRelationship) {
-            IArchimateRelationship rel = (IArchimateRelationship) element;
-            String type = rel.eClass().getName();
-            String name = rel.getName() != null ? rel.getName() : "";
-            String id = rel.getId() != null ? rel.getId() : "";
-            String srcId = rel.getSource() != null && rel.getSource().getId() != null ? rel.getSource().getId() : "";
-            String tgtId = rel.getTarget() != null && rel.getTarget().getId() != null ? rel.getTarget().getId() : "";
-            sb.append(pad).append("<relationship type=\"").append(escape(type)).append("\" name=\"").append(escape(name))
-              .append("\" id=\"").append(escape(id)).append("\" source=\"").append(escape(srcId))
-              .append("\" target=\"").append(escape(tgtId)).append("\"/>\n");
+        String type = element.eClass().getName();
+        String name = element.getName() != null ? element.getName() : "";
+        String id = element.getId() != null ? element.getId() : "";
+        String attrs = "type=\"" + escape(type) + "\" name=\"" + escape(name) + "\" id=\"" + escape(id) + "\"";
+        appendTaggedConcept(sb, pad, "element", attrs, element.getDocumentation());
+    }
+
+    private static void appendTaggedConcept(StringBuilder sb, String pad, String tag, String attributes,
+            String documentation) {
+        if (documentation != null && !documentation.isEmpty()) {
+            sb.append(pad).append("<").append(tag).append(" ").append(attributes).append(">\n");
+            sb.append(pad).append("  <documentation>").append(escape(documentation)).append("</documentation>\n");
+            sb.append(pad).append("</").append(tag).append(">\n");
         } else {
-            String type = element.eClass().getName();
-            String name = element.getName() != null ? element.getName() : "";
-            String id = element.getId() != null ? element.getId() : "";
-            sb.append(pad).append("<element type=\"").append(escape(type)).append("\" name=\"").append(escape(name))
-              .append("\" id=\"").append(escape(id)).append("\"/>\n");
+            sb.append(pad).append("<").append(tag).append(" ").append(attributes).append("/>\n");
         }
     }
 

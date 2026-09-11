@@ -64,7 +64,7 @@ public class ArchiMateLLMResultParserTest {
         assertEquals(1, result.getRelationships().size());
         assertEquals("ServingRelationship", result.getRelationships().get(0).getType());
         assertNull(result.getRelationships().get(0).getId());
-        assertEquals("", result.getRelationships().get(0).getName());
+        assertNull(result.getRelationships().get(0).getName());
     }
 
     @Test
@@ -183,6 +183,7 @@ public class ArchiMateLLMResultParserTest {
         assertEquals("BusinessActor", result.getElements().get(0).getType());
         assertEquals("Clerk", result.getElements().get(0).getName());
         assertEquals(E1, result.getElements().get(0).getId());
+        assertEquals("Handle [exceptions]", result.getElements().get(0).getDocumentation());
         assertEquals(1, result.getRelationships().size());
         assertEquals(E1, result.getRelationships().get(0).getSource());
         assertEquals("AssociationRelationship", result.getRelationships().get(0).getType());
@@ -205,5 +206,100 @@ public class ArchiMateLLMResultParserTest {
         assertEquals(37, result.getElements().size());
         assertEquals("Step [0]", result.getElements().get(0).getName());
         assertEquals(1, result.getRelationships().size());
+    }
+
+    @Test
+    public void parseElements_documentationOmittedStaysNull() {
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(GOOD_JSON);
+        assertNull(result.getElements().get(0).getDocumentation());
+        assertNull(result.getRelationships().get(0).getDocumentation());
+    }
+
+    @Test
+    public void parseRelationships_documentationField() {
+        String json = "{\"elements\":[{\"type\":\"BusinessActor\",\"name\":\"A\",\"id\":\"" + E1 + "\"}],"
+                + "\"relationships\":[{\"type\":\"AssociationRelationship\",\"source\":\"" + E1 + "\",\"target\":\""
+                + E1 + "\",\"id\":\"" + R1 + "\",\"documentation\":\"Links A to A\"}]}";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+        assertEquals("Links A to A", result.getRelationships().get(0).getDocumentation());
+    }
+
+    @Test
+    public void parse_omittedNameStaysNullSoImporterWillNotClearExistingName() {
+        String json = "{\"elements\":[{\"type\":\"BusinessProcess\",\"id\":\"" + E1
+                + "\",\"documentation\":\"Notes only\"}],\"relationships\":[]}";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+        assertNull(result.getElements().get(0).getName());
+        assertEquals("Notes only", result.getElements().get(0).getDocumentation());
+    }
+
+    @Test
+    public void parse_documentationUnescapesQuotesBackslashAndUnicode() {
+        String json = "{\"elements\":[{\"type\":\"BusinessActor\",\"name\":\"A\",\"id\":\"" + E1
+                + "\",\"documentation\":\"He said \\\"hi\\\" at C:\\\\temp\\nand \\u0041\"}],\"relationships\":[]}";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+        assertEquals("He said \"hi\" at C:\\temp\nand A", result.getElements().get(0).getDocumentation());
+    }
+
+    @Test
+    public void parse_advertisedChangesFieldsAreAllRead() {
+        String json = "{\"elements\":[{\"type\":\"BusinessProcess\",\"name\":\"Architecture Design\",\"id\":\"" + E1
+                + "\",\"documentation\":\"Process notes\"}],"
+                + "\"relationships\":[{\"type\":\"TriggeringRelationship\",\"source\":\"" + E1 + "\",\"target\":\"" + E1
+                + "\",\"name\":\"then\",\"id\":\"" + R1 + "\",\"documentation\":\"Flow notes\"}],"
+                + "\"diagram\":{\"name\":\"Process View\",\"viewpoint\":\"Organization\","
+                + "\"nodes\":[{\"elementId\":\"" + E1 + "\",\"x\":10,\"y\":20,\"width\":130,\"height\":60}],"
+                + "\"connections\":[{\"sourceElementId\":\"" + E1 + "\",\"targetElementId\":\"" + E1
+                + "\",\"relationshipId\":\"" + R1 + "\"}]},"
+                + "\"removeElementIds\":[\"" + E2 + "\"],\"removeRelationshipIds\":[\"" + R1 + "\"],"
+                + "\"removeDiagramNames\":[\"Old View\"],"
+                + "\"removeElementFromDiagramIds\":[\"" + E1 + "\"],"
+                + "\"removeRelationshipFromDiagramIds\":[\"" + R1 + "\"]}";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+
+        ArchiMateLLMResult.ElementSpec el = result.getElements().get(0);
+        assertEquals("BusinessProcess", el.getType());
+        assertEquals("Architecture Design", el.getName());
+        assertEquals(E1, el.getId());
+        assertEquals("Process notes", el.getDocumentation());
+
+        ArchiMateLLMResult.RelationshipSpec rel = result.getRelationships().get(0);
+        assertEquals("TriggeringRelationship", rel.getType());
+        assertEquals(E1, rel.getSource());
+        assertEquals(E1, rel.getTarget());
+        assertEquals("then", rel.getName());
+        assertEquals(R1, rel.getId());
+        assertEquals("Flow notes", rel.getDocumentation());
+
+        assertEquals("Process View", result.getDiagram().getName());
+        assertEquals("Organization", result.getDiagram().getViewpoint());
+        assertEquals(E1, result.getDiagram().getNodes().get(0).getElementId());
+        assertEquals(10, result.getDiagram().getNodes().get(0).getX());
+        assertEquals(20, result.getDiagram().getNodes().get(0).getY());
+        assertEquals(130, result.getDiagram().getNodes().get(0).getWidth());
+        assertEquals(60, result.getDiagram().getNodes().get(0).getHeight());
+        assertEquals(E1, result.getDiagram().getConnections().get(0).getSourceElementId());
+        assertEquals(E1, result.getDiagram().getConnections().get(0).getTargetElementId());
+        assertEquals(R1, result.getDiagram().getConnections().get(0).getRelationshipId());
+
+        assertEquals(E2, result.getRemoveElementIds().get(0));
+        assertEquals(R1, result.getRemoveRelationshipIds().get(0));
+        assertEquals("Old View", result.getRemoveDiagramNames().get(0));
+        assertEquals(E1, result.getRemoveElementFromDiagramIds().get(0));
+        assertEquals(R1, result.getRemoveRelationshipFromDiagramIds().get(0));
+    }
+
+    @Test
+    public void parse_unknownExtraFieldsDoNotDropKnownFields() {
+        String json = "{\"elements\":[{\"type\":\"BusinessActor\",\"name\":\"Clerk\",\"id\":\"" + E1
+                + "\",\"documentation\":\"Notes\",\"properties\":[{\"key\":\"Owner\",\"value\":\"IT\"}],"
+                + "\"folder\":\"Business\",\"accessType\":\"Read\"}],"
+                + "\"relationships\":[{\"type\":\"AccessRelationship\",\"source\":\"" + E1 + "\",\"target\":\"" + E1
+                + "\",\"id\":\"" + R1 + "\",\"strength\":\"++\",\"directed\":true,\"documentation\":\"Rel notes\"}]}";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+        assertEquals("Clerk", result.getElements().get(0).getName());
+        assertEquals("Notes", result.getElements().get(0).getDocumentation());
+        assertEquals("Rel notes", result.getRelationships().get(0).getDocumentation());
+        assertEquals(R1, result.getRelationships().get(0).getId());
     }
 }

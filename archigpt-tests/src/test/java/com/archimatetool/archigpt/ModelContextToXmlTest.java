@@ -68,6 +68,42 @@ public class ModelContextToXmlTest {
     }
 
     @Test
+    public void toXml_includesDocumentationWhenPresent() throws Exception {
+        if (!ARCHI_AVAILABLE) return;
+        Object model = createModelWithFolderAndElement("WithDocs", "Business", "Customer", "elem-1");
+        Object actor = findNamed("Customer", model);
+        assertNotNull(actor);
+        actor.getClass().getMethod("setDocumentation", String.class).invoke(actor, "The buyer of products.");
+        String xml = (String) ModelContextToXml.class.getMethod("toXml", Class.forName("com.archimatetool.model.IArchimateModel")).invoke(null, model);
+        assertTrue("Should include documentation element", xml.contains("<documentation>"));
+        assertTrue("Should include documentation text", xml.contains("The buyer of products."));
+        assertTrue("Element with documentation should not be self-closing", xml.contains("</element>"));
+    }
+
+    @Test
+    public void toXml_omitsEmptyDocumentation() throws Exception {
+        if (!ARCHI_AVAILABLE) return;
+        Object model = createModelWithFolderAndElement("NoDocs", "Business", "Customer", "elem-1");
+        String xml = (String) ModelContextToXml.class.getMethod("toXml", Class.forName("com.archimatetool.model.IArchimateModel")).invoke(null, model);
+        assertFalse("Empty documentation must not appear", xml.contains("<documentation>"));
+        assertTrue("Element without documentation stays self-closing", xml.contains("<element "));
+        assertTrue(xml.contains("/>"));
+    }
+
+    @Test
+    public void toXml_includesRelationshipsAndTheirDocumentation() throws Exception {
+        if (!ARCHI_AVAILABLE) return;
+        Object model = createModelWithAssignment("RelModel");
+        String xml = (String) ModelContextToXml.class.getMethod("toXml", Class.forName("com.archimatetool.model.IArchimateModel")).invoke(null, model);
+        assertTrue("Relationships must appear in folder XML, not only on diagrams", xml.contains("<relationship"));
+        assertTrue(xml.contains("AssignmentRelationship"));
+        assertTrue(xml.contains("id-rel-1") || xml.contains("rel-1"));
+        assertTrue("Relationship documentation must be serialized", xml.contains("Assigns the role."));
+        assertTrue(xml.contains("</relationship>"));
+        assertTrue("Element documentation must still be serialized", xml.contains("The customer."));
+    }
+
+    @Test
     public void toXml_escapesSpecialCharactersInName() throws Exception {
         if (!ARCHI_AVAILABLE) return;
         Object model = createEmptyModel("Model \"with\" <tags> & amps");
@@ -106,6 +142,66 @@ public class ModelContextToXmlTest {
         java.util.List<Object> elements = (java.util.List<Object>) folder.getClass().getMethod("getElements").invoke(folder);
         elements.add(actor);
         return model;
+    }
+
+    private static Object createModelWithAssignment(String modelName) throws Exception {
+        Object model = createEmptyModel(modelName);
+        Class<?> factoryClass = Class.forName("com.archimatetool.model.IArchimateFactory");
+        Object factory = factoryClass.getField("eINSTANCE").get(null);
+        Class<?> eObjectClass = Class.forName("org.eclipse.emf.ecore.EObject");
+        Class<?> conceptClass = Class.forName("com.archimatetool.model.IArchimateConcept");
+
+        Object actor = factoryClass.getMethod("createBusinessActor").invoke(factory);
+        actor.getClass().getMethod("setName", String.class).invoke(actor, "Customer");
+        actor.getClass().getMethod("setId", String.class).invoke(actor, "id-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        actor.getClass().getMethod("setDocumentation", String.class).invoke(actor, "The customer.");
+        addToDefaultFolder(model, actor, eObjectClass);
+
+        Object role = factoryClass.getMethod("createBusinessRole").invoke(factory);
+        role.getClass().getMethod("setName", String.class).invoke(role, "Buyer");
+        role.getClass().getMethod("setId", String.class).invoke(role, "id-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        addToDefaultFolder(model, role, eObjectClass);
+
+        Object rel = factoryClass.getMethod("createAssignmentRelationship").invoke(factory);
+        rel.getClass().getMethod("setName", String.class).invoke(rel, "assigned");
+        rel.getClass().getMethod("setId", String.class).invoke(rel, "rel-1");
+        rel.getClass().getMethod("setDocumentation", String.class).invoke(rel, "Assigns the role.");
+        rel.getClass().getMethod("setSource", conceptClass).invoke(rel, actor);
+        rel.getClass().getMethod("setTarget", conceptClass).invoke(rel, role);
+        addToDefaultFolder(model, rel, eObjectClass);
+        return model;
+    }
+
+    private static void addToDefaultFolder(Object model, Object concept, Class<?> eObjectClass) throws Exception {
+        Object folder = model.getClass().getMethod("getDefaultFolderForObject", eObjectClass).invoke(model, concept);
+        @SuppressWarnings("unchecked")
+        java.util.List<Object> elements = (java.util.List<Object>) folder.getClass().getMethod("getElements").invoke(folder);
+        elements.add(concept);
+    }
+
+    private static Object findNamed(String name, Object model) throws Exception {
+        Object folders = model.getClass().getMethod("getFolders").invoke(model);
+        return findNamedInFolders(name, folders);
+    }
+
+    private static Object findNamedInFolders(String name, Object folders) throws Exception {
+        for (Object folder : (Iterable<?>) folders) {
+            Object elements = folder.getClass().getMethod("getElements").invoke(folder);
+            for (Object el : (Iterable<?>) elements) {
+                Object existing = el.getClass().getMethod("getName").invoke(el);
+                if (name.equals(existing)) {
+                    return el;
+                }
+            }
+            Object childFolders = folder.getClass().getMethod("getFolders").invoke(folder);
+            if (childFolders instanceof Iterable) {
+                Object nested = findNamedInFolders(name, childFolders);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
     }
 
 }

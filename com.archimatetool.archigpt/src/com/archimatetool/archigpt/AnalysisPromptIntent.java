@@ -11,7 +11,9 @@ public final class AnalysisPromptIntent {
     private static final Pattern CHANGE_VERB = Pattern.compile(
             "(?i)\\b(add|create|generate|insert|make|remove|delete|rename|renaming)\\b"
                     + "|(?i)\\b(change|update|modify)\\b.{0,80}\\b(name|names|title|label)s?\\b"
-                    + "|(?i)\\b(name|names)\\b.{0,40}\\b(change|update|modify|remove)\\b");
+                    + "|(?i)\\b(name|names)\\b.{0,40}\\b(change|update|modify|remove)\\b"
+                    + "|(?i)\\b(change|update|modify|write|fill|set)\\b.{0,80}\\b(documentation|descriptions?|notes)\\b"
+                    + "|(?i)\\b(documentation|descriptions?|notes)\\b.{0,40}\\b(change|update|modify|add|write|fill|set)\\b");
 
     private AnalysisPromptIntent() {}
 

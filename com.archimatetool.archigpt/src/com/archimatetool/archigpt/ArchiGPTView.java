@@ -1534,6 +1534,8 @@ public class ArchiGPTView extends ViewPart {
                                     if (where.length() > 0) where.insert(0, " ");
                                     int addEl = stats.getCreatedElements(), addRel = stats.getCreatedRelationships();
                                     int renamedEl = stats.getRenamedElements();
+                                    int renamedRel = stats.getRenamedRelationships();
+                                    int documented = stats.getUpdatedDocumentation();
                                     int remEl = resultToImport.getRemoveElementIds().size(), remRel = resultToImport.getRemoveRelationshipIds().size();
                                     int remDiag = resultToImport.getRemoveDiagramNames().size();
                                     int remFromDiagEl = resultToImport.getRemoveElementFromDiagramIds().size();
@@ -1542,13 +1544,16 @@ public class ArchiGPTView extends ViewPart {
                                     if (droppedLlmDiagram) {
                                         action += " The reply included a new \"diagram\" block; it was ignored because a diagram was open and you did not ask for a new view — shapes were added to the open view.";
                                     }
+                                    boolean named = renamedEl > 0 || renamedRel > 0;
                                     if (renamedEl > 0) action += ": renamed " + renamedEl + " element(s).";
-                                    if (addEl > 0 || addRel > 0) action += (renamedEl > 0 ? " " : ": ") + addEl + " elements, " + addRel + " relationships added.";
-                                    if (remEl > 0 || remRel > 0) action += (renamedEl > 0 || addEl > 0 || addRel > 0 ? " " : ": ") + "Removed " + remEl + " elements, " + remRel + " relationships from model.";
-                                    if (remFromDiagEl > 0 || remFromDiagRel > 0) action += (renamedEl > 0 || addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0 ? " " : ": ") + "Removed " + remFromDiagEl + " element(s), " + remFromDiagRel + " relationship(s) from diagram only.";
-                                    if (remDiag > 0) action += (renamedEl > 0 || addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 ? " " : ": ") + "Removed " + remDiag + " diagram(s).";
+                                    if (renamedRel > 0) action += (renamedEl > 0 ? " " : ": ") + "renamed " + renamedRel + " relationship(s).";
+                                    if (addEl > 0 || addRel > 0) action += (named ? " " : ": ") + addEl + " elements, " + addRel + " relationships added.";
+                                    if (documented > 0) action += (named || addEl > 0 || addRel > 0 ? " " : ": ") + "updated documentation on " + documented + " concept(s).";
+                                    if (remEl > 0 || remRel > 0) action += (named || addEl > 0 || addRel > 0 || documented > 0 ? " " : ": ") + "Removed " + remEl + " elements, " + remRel + " relationships from model.";
+                                    if (remFromDiagEl > 0 || remFromDiagRel > 0) action += (named || addEl > 0 || addRel > 0 || documented > 0 || remEl > 0 || remRel > 0 ? " " : ": ") + "Removed " + remFromDiagEl + " element(s), " + remFromDiagRel + " relationship(s) from diagram only.";
+                                    if (remDiag > 0) action += (named || addEl > 0 || addRel > 0 || documented > 0 || remEl > 0 || remRel > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 ? " " : ": ") + "Removed " + remDiag + " diagram(s).";
                                     boolean diagramCreated = resultToImport.getDiagram() != null && resultToImport.getDiagram().getName() != null && !resultToImport.getDiagram().getName().isEmpty();
-                                    importMessage[0] = (renamedEl > 0 || addEl > 0 || addRel > 0 || remEl > 0 || remRel > 0 || remDiag > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 || diagramCreated) ? action : "No changes applied.";
+                                    importMessage[0] = (named || addEl > 0 || addRel > 0 || documented > 0 || remEl > 0 || remRel > 0 || remDiag > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 || diagramCreated) ? action : "No changes applied.";
                                 }
                             });
                             toShow = importMessage[0] + "\n\nRaw LLM response:\n" + truncate(raw, 4000);

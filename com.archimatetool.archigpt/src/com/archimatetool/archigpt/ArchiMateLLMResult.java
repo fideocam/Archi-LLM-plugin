@@ -113,6 +113,8 @@ public final class ArchiMateLLMResult {
         private String type;
         private String name;
         private String id;
+        /** Null means omit (leave existing documentation unchanged). */
+        private String documentation;
 
         public String getType() {
             return type;
@@ -137,6 +139,14 @@ public final class ArchiMateLLMResult {
         public void setId(String id) {
             this.id = id;
         }
+
+        public String getDocumentation() {
+            return documentation;
+        }
+
+        public void setDocumentation(String documentation) {
+            this.documentation = documentation;
+        }
     }
 
     public static final class RelationshipSpec {
@@ -145,6 +155,8 @@ public final class ArchiMateLLMResult {
         private String target;
         private String name;
         private String id;
+        /** Null means omit (leave existing documentation unchanged). */
+        private String documentation;
 
         public String getType() {
             return type;
@@ -184,6 +196,14 @@ public final class ArchiMateLLMResult {
 
         public void setId(String id) {
             this.id = id;
+        }
+
+        public String getDocumentation() {
+            return documentation;
+        }
+
+        public void setDocumentation(String documentation) {
+            this.documentation = documentation;
         }
     }
 }

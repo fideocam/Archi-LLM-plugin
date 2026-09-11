@@ -214,8 +214,9 @@ public final class ArchiMateLLMResultParser {
             ArchiMateLLMResult.ElementSpec e = new ArchiMateLLMResult.ElementSpec();
             e.setType(type.trim());
             String name = jsonStringField(block, "name");
-            e.setName(name != null ? name : "");
+            e.setName(name);
             e.setId(id.trim());
+            e.setDocumentation(jsonStringField(block, "documentation"));
             result.getElements().add(e);
         }
     }
@@ -236,9 +237,10 @@ public final class ArchiMateLLMResultParser {
             rel.setSource(source.trim());
             rel.setTarget(target.trim());
             String name = jsonStringField(block, "name");
-            rel.setName(name != null ? name : "");
+            rel.setName(name);
             String id = jsonStringField(block, "id");
             rel.setId(id != null && !id.trim().isEmpty() ? id.trim() : null);
+            rel.setDocumentation(jsonStringField(block, "documentation"));
             result.getRelationships().add(rel);
         }
     }
@@ -327,7 +329,53 @@ public final class ArchiMateLLMResultParser {
     }
 
     private static String unescapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t").replace("\\\"", "\"");
+        if (s == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c != '\\' || i + 1 >= s.length()) {
+                out.append(c);
+                continue;
+            }
+            char n = s.charAt(++i);
+            switch (n) {
+                case 'n':
+                    out.append('\n');
+                    break;
+                case 'r':
+                    out.append('\r');
+                    break;
+                case 't':
+                    out.append('\t');
+                    break;
+                case '"':
+                    out.append('"');
+                    break;
+                case '\\':
+                    out.append('\\');
+                    break;
+                case '/':
+                    out.append('/');
+                    break;
+                case 'u':
+                    if (i + 4 < s.length()) {
+                        try {
+                            out.append((char) Integer.parseInt(s.substring(i + 1, i + 5), 16));
+                            i += 4;
+                            break;
+                        } catch (NumberFormatException ignored) {
+                            // fall through and keep the 'u'
+                        }
+                    }
+                    out.append('u');
+                    break;
+                default:
+                    out.append(n);
+                    break;
+            }
+        }
+        return out.toString();
     }
 }

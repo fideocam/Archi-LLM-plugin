@@ -4,6 +4,8 @@
 package com.archimatetool.archigpt;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -134,11 +136,13 @@ public final class ArchiMateLLMImporter {
         return stats;
     }
 
-    /** Counts of what the importer actually applied (creates vs in-place renames). */
+    /** Counts of what the importer actually applied (creates vs in-place edits). */
     public static final class ImportStats {
         private int createdElements;
         private int renamedElements;
         private int createdRelationships;
+        private int renamedRelationships;
+        private int updatedDocumentation;
 
         public int getCreatedElements() {
             return createdElements;
@@ -150,6 +154,14 @@ public final class ArchiMateLLMImporter {
 
         public int getCreatedRelationships() {
             return createdRelationships;
+        }
+
+        public int getRenamedRelationships() {
+            return renamedRelationships;
+        }
+
+        public int getUpdatedDocumentation() {
+            return updatedDocumentation;
         }
     }
 
@@ -170,27 +182,36 @@ public final class ArchiMateLLMImporter {
         Map<String, IArchimateConcept> idToConcept = new HashMap<>();
         Map<String, IArchimateRelationship> idToRelationship = new HashMap<>();
         Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures = new HashMap<>();
-
-        int[] origin = newFigureOrigin(targetDiagram, DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
-        int diagramX = origin[0];
-        int diagramY = origin[1];
+        List<PreparedElement> createdForView = new ArrayList<>();
 
         for (ArchiMateLLMResult.ElementSpec e : result.getElements()) {
             PreparedElement prepared = prepareElement(e, model, targetFolder, idToConcept, compound, stats);
-            if (prepared == null || !prepared.created || targetDiagram == null || result.getDiagram() != null) {
+            if (prepared == null) {
                 continue;
             }
-            IDiagramModelArchimateObject dmo = createFigure(prepared.element, diagramX, diagramY,
-                    DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
-            compound.add(new AddDiagramObjectCommand(targetDiagram, dmo));
-            pendingFigures.put(prepared.element, dmo);
-            diagramY += DEFAULT_ELEMENT_HEIGHT + DEFAULT_GAP;
+            if (prepared.created && targetDiagram != null && result.getDiagram() == null) {
+                createdForView.add(prepared);
+            }
         }
+        placeCreatedFiguresOnView(compound, targetDiagram, createdForView, result, model, idToConcept, pendingFigures);
 
         for (ArchiMateLLMResult.RelationshipSpec r : result.getRelationships()) {
             String relType = ArchiMateSchemaValidator.normalizeRelationshipType(r.getType());
             EClass rClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(relType);
             if (rClass == null || !IArchimatePackage.eINSTANCE.getArchimateRelationship().isSuperTypeOf(rClass)) {
+                continue;
+            }
+            IArchimateRelationship existingRel = existingRelationshipForSpec(model, r);
+            if (existingRel != null) {
+                rememberRelationshipId(idToRelationship, r.getId(), existingRel);
+                applyExistingRelationshipEdits(compound, existingRel, r, stats);
+                if (targetDiagram != null && result.getDiagram() == null
+                        && existingRel.getSource() instanceof IArchimateElement
+                        && existingRel.getTarget() instanceof IArchimateElement) {
+                    appendRelationshipArrowCommand(compound, targetDiagram,
+                            (IArchimateElement) existingRel.getSource(),
+                            (IArchimateElement) existingRel.getTarget(), existingRel, pendingFigures);
+                }
                 continue;
             }
             IArchimateConcept sourceConcept = idToConcept.get(r.getSource());
@@ -208,6 +229,9 @@ public final class ArchiMateLLMImporter {
             IArchimateElement target = (IArchimateElement) targetConcept;
             IArchimateRelationship rel = (IArchimateRelationship) IArchimateFactory.eINSTANCE.create(rClass);
             rel.setName(r.getName() != null ? r.getName() : "");
+            if (r.getDocumentation() != null) {
+                rel.setDocumentation(r.getDocumentation());
+            }
             String relId = ensureArchiMateId(r.getId());
             rel.setId(relId);
             idToRelationship.put(relId, rel);
@@ -299,6 +323,35 @@ public final class ArchiMateLLMImporter {
                 relFolder.getElements().remove(rel);
             }
             rel.disconnect();
+        }
+    }
+
+    /** Undoable documentation update for an existing concept. */
+    private static final class SetDocumentationCommand extends Command {
+        private final IArchimateConcept concept;
+        private final String newDocumentation;
+        private String oldDocumentation;
+
+        SetDocumentationCommand(IArchimateConcept concept, String newDocumentation) {
+            super("ArchiGPT: set documentation");
+            this.concept = concept;
+            this.newDocumentation = newDocumentation != null ? newDocumentation : "";
+        }
+
+        @Override
+        public boolean canExecute() {
+            return concept != null && namesDiffer(concept.getDocumentation(), newDocumentation);
+        }
+
+        @Override
+        public void execute() {
+            oldDocumentation = concept.getDocumentation();
+            concept.setDocumentation(newDocumentation);
+        }
+
+        @Override
+        public void undo() {
+            concept.setDocumentation(oldDocumentation);
         }
     }
 
@@ -471,27 +524,35 @@ public final class ArchiMateLLMImporter {
         Map<String, IArchimateConcept> idToConcept = new HashMap<>();
         Map<String, IArchimateRelationship> idToRelationship = new HashMap<>();
         Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures = new HashMap<>();
-
-        int[] origin = newFigureOrigin(targetDiagram, DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
-        int diagramX = origin[0];
-        int diagramY = origin[1];
+        List<PreparedElement> createdForView = new ArrayList<>();
 
         for (ArchiMateLLMResult.ElementSpec e : result.getElements()) {
             PreparedElement prepared = prepareElement(e, model, targetFolder, idToConcept, null, stats);
-            if (prepared == null || !prepared.created || targetDiagram == null || result.getDiagram() != null) {
+            if (prepared == null) {
                 continue;
             }
-            IDiagramModelArchimateObject dmo = createFigure(prepared.element, diagramX, diagramY,
-                    DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
-            targetDiagram.getChildren().add(dmo);
-            pendingFigures.put(prepared.element, dmo);
-            diagramY += DEFAULT_ELEMENT_HEIGHT + DEFAULT_GAP;
+            if (prepared.created && targetDiagram != null && result.getDiagram() == null) {
+                createdForView.add(prepared);
+            }
         }
+        placeCreatedFiguresOnView(null, targetDiagram, createdForView, result, model, idToConcept, pendingFigures);
 
         for (ArchiMateLLMResult.RelationshipSpec r : result.getRelationships()) {
             String relType = ArchiMateSchemaValidator.normalizeRelationshipType(r.getType());
             EClass rClass = (EClass) IArchimatePackage.eINSTANCE.getEClassifier(relType);
             if (rClass == null || !IArchimatePackage.eINSTANCE.getArchimateRelationship().isSuperTypeOf(rClass)) {
+                continue;
+            }
+            IArchimateRelationship existingRel = existingRelationshipForSpec(model, r);
+            if (existingRel != null) {
+                rememberRelationshipId(idToRelationship, r.getId(), existingRel);
+                applyExistingRelationshipEdits(null, existingRel, r, stats);
+                if (targetDiagram != null && result.getDiagram() == null
+                        && existingRel.getSource() instanceof IArchimateElement
+                        && existingRel.getTarget() instanceof IArchimateElement) {
+                    addArchimateConnectionNow(targetDiagram, (IArchimateElement) existingRel.getSource(),
+                            (IArchimateElement) existingRel.getTarget(), existingRel, pendingFigures);
+                }
                 continue;
             }
             IArchimateConcept sourceConcept = idToConcept.get(r.getSource());
@@ -509,6 +570,9 @@ public final class ArchiMateLLMImporter {
             IArchimateElement target = (IArchimateElement) targetConcept;
             IArchimateRelationship rel = (IArchimateRelationship) IArchimateFactory.eINSTANCE.create(rClass);
             rel.setName(r.getName() != null ? r.getName() : "");
+            if (r.getDocumentation() != null) {
+                rel.setDocumentation(r.getDocumentation());
+            }
             String relId = ensureArchiMateId(r.getId());
             rel.setId(relId);
             idToRelationship.put(relId, rel);
@@ -1161,20 +1225,26 @@ public final class ArchiMateLLMImporter {
         if (eClass == null || !IArchimatePackage.eINSTANCE.getArchimateElement().isSuperTypeOf(eClass)) {
             return null;
         }
-        String name = e.getName() != null ? e.getName() : "";
-        IArchimateElement existing = existingElementForSpec(model, eClass, name, e.getId());
+        String name = e.getName();
+        IArchimateElement existing = existingElementForSpec(model, eClass, name != null ? name : "", e.getId());
         if (existing != null) {
             rememberConceptId(idToConcept, e.getId(), existing);
-            if (eClass.isInstance(existing) && namesDiffer(existing.getName(), name)) {
+            if (name != null && eClass.isInstance(existing) && namesDiffer(existing.getName(), name)) {
                 applyRename(compound, existing, name);
                 if (stats != null) {
                     stats.renamedElements++;
                 }
             }
+            if (applyDocumentation(compound, existing, e.getDocumentation()) && stats != null) {
+                stats.updatedDocumentation++;
+            }
             return new PreparedElement(existing, false);
         }
         IArchimateElement element = (IArchimateElement) IArchimateFactory.eINSTANCE.create(eClass);
-        element.setName(name);
+        element.setName(name != null ? name : "");
+        if (e.getDocumentation() != null) {
+            element.setDocumentation(e.getDocumentation());
+        }
         String elementId = ensureArchiMateId(e.getId());
         element.setId(elementId);
         IFolder folder = resolveFolderFor(model, element, targetFolder);
@@ -1201,6 +1271,69 @@ public final class ArchiMateLLMImporter {
             compound.add(new SetNameCommand(concept, name));
         } else {
             concept.setName(name);
+        }
+    }
+
+    /**
+     * Apply name/documentation on an existing relationship. Null name or documentation means leave unchanged.
+     */
+    private static void applyExistingRelationshipEdits(NonNotifyingCompoundCommand compound,
+            IArchimateRelationship existingRel, ArchiMateLLMResult.RelationshipSpec r, ImportStats stats) {
+        if (existingRel == null || r == null) {
+            return;
+        }
+        if (r.getName() != null && namesDiffer(existingRel.getName(), r.getName())) {
+            applyRename(compound, existingRel, r.getName());
+            if (stats != null) {
+                stats.renamedRelationships++;
+            }
+        }
+        if (applyDocumentation(compound, existingRel, r.getDocumentation()) && stats != null) {
+            stats.updatedDocumentation++;
+        }
+    }
+
+    /**
+     * Apply documentation when the LLM included the field. Null means leave existing text unchanged.
+     * @return true if the stored documentation actually changed
+     */
+    private static boolean applyDocumentation(NonNotifyingCompoundCommand compound, IArchimateConcept concept,
+            String documentation) {
+        if (concept == null || documentation == null || !namesDiffer(concept.getDocumentation(), documentation)) {
+            return false;
+        }
+        if (compound != null) {
+            compound.add(new SetDocumentationCommand(concept, documentation));
+        } else {
+            concept.setDocumentation(documentation);
+        }
+        return true;
+    }
+
+    private static IArchimateRelationship existingRelationshipForSpec(IArchimateModel model,
+            ArchiMateLLMResult.RelationshipSpec r) {
+        if (r == null) {
+            return null;
+        }
+        IArchimateConcept byId = findConceptById(model, r.getId());
+        return byId instanceof IArchimateRelationship ? (IArchimateRelationship) byId : null;
+    }
+
+    private static void rememberRelationshipId(Map<String, IArchimateRelationship> idToRelationship, String llmId,
+            IArchimateRelationship rel) {
+        if (idToRelationship == null || rel == null) {
+            return;
+        }
+        if (rel.getId() != null && !rel.getId().isEmpty()) {
+            idToRelationship.put(rel.getId(), rel);
+        }
+        if (llmId != null && !llmId.trim().isEmpty()) {
+            String trimmed = llmId.trim();
+            idToRelationship.put(trimmed, rel);
+            String normalized = normalizeLookupId(trimmed);
+            if (normalized != null) {
+                idToRelationship.put(normalized, rel);
+            }
         }
     }
 
@@ -1249,6 +1382,300 @@ public final class ArchiMateLLMImporter {
         dmo.setArchimateElement(element);
         dmo.setBounds(x, y, width, height);
         return dmo;
+    }
+
+    /**
+     * Place newly created elements on an existing view. Prefer slots around the on-diagram
+     * concept they connect to most so relationship arrows stay short and do not cross the cluster.
+     * Unconnected elements still fall back to a column just outside the occupied area.
+     */
+    private static void placeCreatedFiguresOnView(NonNotifyingCompoundCommand compound, IArchimateDiagramModel diagram,
+            List<PreparedElement> createdForView, ArchiMateLLMResult result, IArchimateModel model,
+            Map<String, IArchimateConcept> idToConcept, Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures) {
+        if (diagram == null || createdForView == null || createdForView.isEmpty()) {
+            return;
+        }
+        List<int[]> occupied = collectOccupiedRects(diagram);
+        List<PreparedElement> remaining = new ArrayList<PreparedElement>(createdForView);
+        while (!remaining.isEmpty()) {
+            PreparedElement chosen = null;
+            IArchimateElement anchor = null;
+            for (PreparedElement candidate : remaining) {
+                IArchimateElement found = bestAnchorOnView(candidate.element, result, model, idToConcept, diagram,
+                        pendingFigures);
+                if (found != null) {
+                    chosen = candidate;
+                    anchor = found;
+                    break;
+                }
+            }
+            if (chosen == null) {
+                chosen = remaining.get(0);
+            }
+            int[] xy = anchor != null
+                    ? firstFreeSlotAround(anchor, diagram, pendingFigures, occupied)
+                    : firstFreeFallbackSlot(diagram, occupied);
+            IDiagramModelArchimateObject dmo = createFigure(chosen.element, xy[0], xy[1],
+                    DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
+            if (compound != null) {
+                compound.add(new AddDiagramObjectCommand(diagram, dmo));
+            } else {
+                diagram.getChildren().add(dmo);
+            }
+            pendingFigures.put(chosen.element, dmo);
+            occupied.add(new int[] { xy[0], xy[1], DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT });
+            remaining.remove(chosen);
+        }
+    }
+
+    /**
+     * On-diagram (or already-placed) element with the most payload relationships to {@code newbie}.
+     * Prefers an existing figure over a newly placed satellite when counts tie.
+     */
+    private static IArchimateElement bestAnchorOnView(IArchimateElement newbie, ArchiMateLLMResult result,
+            IArchimateModel model, Map<String, IArchimateConcept> idToConcept, IArchimateDiagramModel diagram,
+            Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures) {
+        if (newbie == null || result == null) {
+            return null;
+        }
+        Set<IArchimateElement> candidates = new LinkedHashSet<IArchimateElement>();
+        collectElementsWithFigures(diagram, candidates);
+        if (pendingFigures != null) {
+            candidates.addAll(pendingFigures.keySet());
+        }
+        candidates.remove(newbie);
+        IArchimateElement best = null;
+        int bestCount = 0;
+        boolean bestPending = true;
+        for (IArchimateElement candidate : candidates) {
+            int count = payloadConnectionCount(newbie, candidate, result, model, idToConcept);
+            if (count <= 0) {
+                continue;
+            }
+            boolean pending = pendingFigures != null && pendingFigures.containsKey(candidate);
+            if (count > bestCount || (count == bestCount && bestPending && !pending)) {
+                best = candidate;
+                bestCount = count;
+                bestPending = pending;
+            }
+        }
+        return best;
+    }
+
+    private static int payloadConnectionCount(IArchimateElement a, IArchimateElement b, ArchiMateLLMResult result,
+            IArchimateModel model, Map<String, IArchimateConcept> idToConcept) {
+        if (a == null || b == null || result == null || result.getRelationships() == null) {
+            return 0;
+        }
+        int n = 0;
+        for (ArchiMateLLMResult.RelationshipSpec r : result.getRelationships()) {
+            IArchimateElement source = resolveElement(r.getSource(), idToConcept, model);
+            IArchimateElement target = resolveElement(r.getTarget(), idToConcept, model);
+            if (source == null || target == null) {
+                continue;
+            }
+            if ((source == a && target == b) || (source == b && target == a)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static IArchimateElement resolveElement(String id, Map<String, IArchimateConcept> idToConcept,
+            IArchimateModel model) {
+        IArchimateConcept concept = null;
+        if (idToConcept != null && id != null) {
+            concept = idToConcept.get(id);
+            if (concept == null) {
+                String normalized = normalizeLookupId(id);
+                if (normalized != null) {
+                    concept = idToConcept.get(normalized);
+                }
+            }
+        }
+        if (concept == null) {
+            concept = findConceptById(model, id);
+        }
+        return concept instanceof IArchimateElement ? (IArchimateElement) concept : null;
+    }
+
+    private static int[] firstFreeSlotAround(IArchimateElement anchor, IArchimateDiagramModel diagram,
+            Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures, List<int[]> occupied) {
+        int[] hub = boundsOfFigure(anchor, diagram, pendingFigures);
+        if (hub == null) {
+            return firstFreeFallbackSlot(diagram, occupied);
+        }
+        int[] centroid = occupiedCentroid(occupied, hub);
+        for (int[] slot : candidateSlotsAround(hub, centroid, DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT)) {
+            if (slot[0] < CANVAS_MARGIN || slot[1] < CANVAS_MARGIN) {
+                continue;
+            }
+            if (!overlapsOccupied(slot[0], slot[1], DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT, occupied)) {
+                return slot;
+            }
+        }
+        return firstFreeFallbackSlot(diagram, occupied);
+    }
+
+    /**
+     * Cardinal then diagonal slots, outward from the cluster centroid first, then further rings.
+     * East/South/West/North order when the hub is the only figure.
+     */
+    private static List<int[]> candidateSlotsAround(int[] hub, int[] centroid, int w, int h) {
+        int hubCx = hub[0] + hub[2] / 2;
+        int hubCy = hub[1] + hub[3] / 2;
+        int outX = hubCx - centroid[0];
+        int outY = hubCy - centroid[1];
+        if (outX == 0 && outY == 0) {
+            outX = 1;
+        }
+        final int preferX = outX;
+        final int preferY = outY;
+        Integer[] order = new Integer[] { 0, 1, 2, 3, 4, 5, 6, 7 };
+        Arrays.sort(order, new Comparator<Integer>() {
+            @Override
+            public int compare(Integer a, Integer b) {
+                int[] da = AROUND_DIRS[a.intValue()];
+                int[] db = AROUND_DIRS[b.intValue()];
+                int sa = da[0] * preferX + da[1] * preferY;
+                int sb = db[0] * preferX + db[1] * preferY;
+                if (sa != sb) {
+                    return sb - sa;
+                }
+                return a.intValue() - b.intValue();
+            }
+        });
+        List<int[]> slots = new ArrayList<int[]>();
+        for (int ring = 1; ring <= 6; ring++) {
+            int extraX = (ring - 1) * (w + DEFAULT_GAP);
+            int extraY = (ring - 1) * (h + DEFAULT_GAP);
+            for (int oi = 0; oi < order.length; oi++) {
+                int[] dir = AROUND_DIRS[order[oi].intValue()];
+                int x;
+                int y;
+                if (dir[0] > 0) {
+                    x = hub[0] + hub[2] + DEFAULT_GAP + extraX;
+                } else if (dir[0] < 0) {
+                    x = hub[0] - w - DEFAULT_GAP - extraX;
+                } else {
+                    x = hubCx - w / 2;
+                }
+                if (dir[1] > 0) {
+                    y = hub[1] + hub[3] + DEFAULT_GAP + extraY;
+                } else if (dir[1] < 0) {
+                    y = hub[1] - h - DEFAULT_GAP - extraY;
+                } else {
+                    y = hubCy - h / 2;
+                }
+                slots.add(new int[] { x, y });
+            }
+        }
+        return slots;
+    }
+
+    private static final int[][] AROUND_DIRS = {
+            { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 },
+            { 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 }
+    };
+
+    private static int[] firstFreeFallbackSlot(IArchimateDiagramModel diagram, List<int[]> occupied) {
+        int[] origin = newFigureOrigin(diagram, DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT);
+        int x = origin[0];
+        int y = origin[1];
+        if (x < CANVAS_MARGIN) {
+            x = CANVAS_MARGIN;
+        }
+        if (y < CANVAS_MARGIN) {
+            y = CANVAS_MARGIN;
+        }
+        for (int i = 0; i < 40; i++) {
+            if (!overlapsOccupied(x, y, DEFAULT_ELEMENT_WIDTH, DEFAULT_ELEMENT_HEIGHT, occupied)) {
+                return new int[] { x, y };
+            }
+            y += DEFAULT_ELEMENT_HEIGHT + DEFAULT_GAP;
+        }
+        return new int[] { x, y };
+    }
+
+    private static int[] boundsOfFigure(IArchimateElement element, IArchimateDiagramModel diagram,
+            Map<IArchimateElement, IDiagramModelArchimateObject> pendingFigures) {
+        IDiagramModelArchimateObject dmo = findFigureOnDiagram(diagram, element, pendingFigures);
+        if (dmo == null) {
+            return null;
+        }
+        IBounds b = dmo.getBounds();
+        if (b == null) {
+            return null;
+        }
+        return new int[] { b.getX(), b.getY(), b.getWidth(), b.getHeight() };
+    }
+
+    private static void collectElementsWithFigures(IDiagramModelContainer container, Set<IArchimateElement> out) {
+        if (container == null || container.getChildren() == null) {
+            return;
+        }
+        for (Object child : container.getChildren()) {
+            if (child instanceof IDiagramModelArchimateObject) {
+                IArchimateElement el = ((IDiagramModelArchimateObject) child).getArchimateElement();
+                if (el != null) {
+                    out.add(el);
+                }
+            }
+            if (child instanceof IDiagramModelContainer) {
+                collectElementsWithFigures((IDiagramModelContainer) child, out);
+            }
+        }
+    }
+
+    private static List<int[]> collectOccupiedRects(IDiagramModelContainer container) {
+        List<int[]> out = new ArrayList<int[]>();
+        accumulateOccupiedRects(container, out);
+        return out;
+    }
+
+    private static void accumulateOccupiedRects(IDiagramModelContainer container, List<int[]> out) {
+        if (container == null || container.getChildren() == null) {
+            return;
+        }
+        for (Object child : container.getChildren()) {
+            if (child instanceof IDiagramModelObject) {
+                IBounds b = ((IDiagramModelObject) child).getBounds();
+                if (b != null) {
+                    out.add(new int[] { b.getX(), b.getY(), b.getWidth(), b.getHeight() });
+                }
+            }
+            if (child instanceof IDiagramModelContainer) {
+                accumulateOccupiedRects((IDiagramModelContainer) child, out);
+            }
+        }
+    }
+
+    private static int[] occupiedCentroid(List<int[]> occupied, int[] fallbackHub) {
+        if (occupied == null || occupied.isEmpty()) {
+            return new int[] { fallbackHub[0] + fallbackHub[2] / 2, fallbackHub[1] + fallbackHub[3] / 2 };
+        }
+        long sx = 0;
+        long sy = 0;
+        int n = 0;
+        for (int[] r : occupied) {
+            sx += r[0] + r[2] / 2;
+            sy += r[1] + r[3] / 2;
+            n++;
+        }
+        return new int[] { (int) (sx / n), (int) (sy / n) };
+    }
+
+    private static boolean overlapsOccupied(int x, int y, int w, int h, List<int[]> occupied) {
+        if (occupied == null) {
+            return false;
+        }
+        int pad = Math.max(1, DEFAULT_GAP / 2);
+        for (int[] r : occupied) {
+            if (x < r[0] + r[2] + pad && x + w + pad > r[0] && y < r[1] + r[3] + pad && y + h + pad > r[1]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

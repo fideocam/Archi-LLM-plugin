@@ -199,6 +199,20 @@ public class EnterpriseArchitectTasksTest {
     }
 
     @Test
+    public void addDocumentation_classifiedAsChangesNotAnalysis() {
+        String prompt = "Add documentation into the documentation fields.";
+        assertFalse(AnalysisPromptIntent.likelyAnalysisOnly(prompt));
+        assertUserMessageWellFormed("add-documentation", prompt);
+    }
+
+    @Test
+    public void updateDocumentation_classifiedAsChangesNotAnalysis() {
+        String prompt = "Update the documentation of Architecture Design.";
+        assertFalse(AnalysisPromptIntent.likelyAnalysisOnly(prompt));
+        assertUserMessageWellFormed("update-documentation", prompt);
+    }
+
+    @Test
     public void changeImpactQuestion_stillClassifiedAsAnalysis() {
         String prompt = "What business processes are affected by a change to this application?";
         assertTrue(AnalysisPromptIntent.likelyAnalysisOnly(prompt));

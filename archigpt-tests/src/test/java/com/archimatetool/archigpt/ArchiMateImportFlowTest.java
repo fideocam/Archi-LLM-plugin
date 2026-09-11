@@ -471,6 +471,186 @@ public class ArchiMateImportFlowTest {
     }
 
     @Test
+    public void importDocumentationById_updatesNotesWithoutDuplicating() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createBusinessProcess", "Architecture Design", E1);
+        int before = countElementsInModel(model);
+
+        String json = "{\"elements\":[{\"type\":\"BusinessProcess\",\"name\":\"Architecture Design\",\"id\":\"" + E1
+                + "\",\"documentation\":\"This process defines the steps for creating and maintaining the enterprise architecture.\"}],\"relationships\":[]}";
+        Object stats = importReturningStats(ArchiMateLLMResultParser.parse(json), model, null);
+
+        assertEquals("Documentation update must not create a second element", before, countElementsInModel(model));
+        assertEquals("This process defines the steps for creating and maintaining the enterprise architecture.",
+                documentationOfId(model, E1));
+        assertEquals(1, stats.getClass().getMethod("getUpdatedDocumentation").invoke(stats));
+        assertEquals(0, stats.getClass().getMethod("getCreatedElements").invoke(stats));
+    }
+
+    @Test
+    public void importDocumentationOmitted_leavesExistingNotesUnchanged() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object process = addNamedConcept(factory, model, "createBusinessProcess", "Architecture Design", E1);
+        process.getClass().getMethod("setDocumentation", String.class).invoke(process, "Existing notes");
+
+        String json = "{\"elements\":[{\"type\":\"BusinessProcess\",\"name\":\"Architecture Design\",\"id\":\"" + E1
+                + "\"}],\"relationships\":[]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        importWithDiagram(parsed, model, null);
+
+        assertEquals("Existing notes", documentationOfId(model, E1));
+    }
+
+    @Test
+    public void importNewElement_setsDocumentation() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        String json = "{\"elements\":[{\"type\":\"BusinessActor\",\"name\":\"Customer\",\"id\":\"" + E1
+                + "\",\"documentation\":\"The buyer of products.\"}],\"relationships\":[]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        importWithDiagram(parsed, model, null);
+        assertEquals("The buyer of products.", documentationOfId(model, E1));
+    }
+
+    @Test
+    public void importDocumentationOnExistingRelationship_updatesWithoutDuplicating() throws Exception {
+        ArchiMateLLMResult setup = ArchiMateLLMResultParser.parse(GOOD_LLM_RESPONSE);
+        Object factory = factory();
+        Object model = createModel(factory);
+        importWithDiagram(setup, model, null);
+        int before = countElementsInModel(model);
+
+        String json = "{\"elements\":[],\"relationships\":[{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1
+                + "\",\"target\":\"" + E2 + "\",\"name\":\"\",\"id\":\"" + R1
+                + "\",\"documentation\":\"Customer is assigned the Buyer role.\"}]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        importWithDiagram(parsed, model, null);
+
+        assertEquals("Existing relationship must not be duplicated", before, countElementsInModel(model));
+        assertEquals("Customer is assigned the Buyer role.", documentationOfId(model, R1));
+    }
+
+    @Test
+    public void importDocumentationUnchanged_doesNotCountAsUpdate() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object process = addNamedConcept(factory, model, "createBusinessProcess", "Architecture Design", E1);
+        process.getClass().getMethod("setDocumentation", String.class).invoke(process, "Same notes");
+
+        String json = "{\"elements\":[{\"type\":\"BusinessProcess\",\"name\":\"Architecture Design\",\"id\":\"" + E1
+                + "\",\"documentation\":\"Same notes\"}],\"relationships\":[]}";
+        Object stats = importReturningStats(ArchiMateLLMResultParser.parse(json), model, null);
+        assertEquals("Same notes", documentationOfId(model, E1));
+        assertEquals(0, stats.getClass().getMethod("getUpdatedDocumentation").invoke(stats));
+        assertEquals(0, stats.getClass().getMethod("getCreatedElements").invoke(stats));
+    }
+
+    @Test
+    public void importDocumentationWithoutName_doesNotClearExistingName() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createBusinessProcess", "Architecture Design", E1);
+
+        String json = "{\"elements\":[{\"type\":\"BusinessProcess\",\"id\":\"" + E1
+                + "\",\"documentation\":\"Filled in later.\"}],\"relationships\":[]}";
+        importWithDiagram(ArchiMateLLMResultParser.parse(json), model, null);
+
+        assertEquals("Architecture Design", nameOfId(model, E1));
+        assertEquals("Filled in later.", documentationOfId(model, E1));
+    }
+
+    @Test
+    public void importDocumentationAndRenameTogether() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createBusinessProcess", "Old Name", E1);
+
+        String json = "{\"elements\":[{\"type\":\"BusinessProcess\",\"name\":\"Architecture Design\",\"id\":\"" + E1
+                + "\",\"documentation\":\"Owns architecture work.\"}],\"relationships\":[]}";
+        Object stats = importReturningStats(ArchiMateLLMResultParser.parse(json), model, null);
+
+        assertEquals("Architecture Design", nameOfId(model, E1));
+        assertEquals("Owns architecture work.", documentationOfId(model, E1));
+        assertEquals(1, stats.getClass().getMethod("getRenamedElements").invoke(stats));
+        assertEquals(1, stats.getClass().getMethod("getUpdatedDocumentation").invoke(stats));
+        assertEquals(0, stats.getClass().getMethod("getCreatedElements").invoke(stats));
+    }
+
+    @Test
+    public void importNewRelationship_setsDocumentation() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        addNamedConcept(factory, model, "createBusinessRole", "Buyer", E2);
+
+        String json = "{\"elements\":[],\"relationships\":[{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1
+                + "\",\"target\":\"" + E2 + "\",\"name\":\"assigned\",\"id\":\"" + R1
+                + "\",\"documentation\":\"Customer is assigned Buyer.\"}]}";
+        importWithDiagram(ArchiMateLLMResultParser.parse(json), model, null);
+        assertEquals("Customer is assigned Buyer.", documentationOfId(model, R1));
+        assertEquals("assigned", nameOfId(model, R1));
+    }
+
+    @Test
+    public void importRenameExistingRelationship_updatesNameWithoutDuplicating() throws Exception {
+        ArchiMateLLMResult setup = ArchiMateLLMResultParser.parse(GOOD_LLM_RESPONSE);
+        Object factory = factory();
+        Object model = createModel(factory);
+        importWithDiagram(setup, model, null);
+        int before = countElementsInModel(model);
+
+        String json = "{\"elements\":[],\"relationships\":[{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1
+                + "\",\"target\":\"" + E2 + "\",\"name\":\"assigned as\",\"id\":\"" + R1 + "\"}]}";
+        Object stats = importReturningStats(ArchiMateLLMResultParser.parse(json), model, null);
+
+        assertEquals(before, countElementsInModel(model));
+        assertEquals("assigned as", nameOfId(model, R1));
+        assertEquals(1, stats.getClass().getMethod("getRenamedRelationships").invoke(stats));
+        assertEquals(0, stats.getClass().getMethod("getCreatedRelationships").invoke(stats));
+    }
+
+    @Test
+    public void importRelationshipDocumentationWithoutName_doesNotClearRelationshipName() throws Exception {
+        String setupJson = "{\"elements\":["
+                + "{\"type\":\"BusinessActor\",\"name\":\"Customer\",\"id\":\"" + E1 + "\"},"
+                + "{\"type\":\"BusinessRole\",\"name\":\"Buyer\",\"id\":\"" + E2 + "\"}"
+                + "],\"relationships\":["
+                + "{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1 + "\",\"target\":\"" + E2
+                + "\",\"name\":\"assigned\",\"id\":\"" + R1 + "\"}]}";
+        Object factory = factory();
+        Object model = createModel(factory);
+        importWithDiagram(ArchiMateLLMResultParser.parse(setupJson), model, null);
+
+        String json = "{\"elements\":[],\"relationships\":[{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1
+                + "\",\"target\":\"" + E2 + "\",\"id\":\"" + R1 + "\",\"documentation\":\"Role assignment.\"}]}";
+        importWithDiagram(ArchiMateLLMResultParser.parse(json), model, null);
+
+        assertEquals("assigned", nameOfId(model, R1));
+        assertEquals("Role assignment.", documentationOfId(model, R1));
+    }
+
+    @Test
+    public void importAdvertisedElementAndRelationshipFields_allLandInModel() throws Exception {
+        String json = "{\"elements\":[{\"type\":\"BusinessActor\",\"name\":\"Customer\",\"id\":\"" + E1
+                + "\",\"documentation\":\"The buyer.\"},"
+                + "{\"type\":\"BusinessRole\",\"name\":\"Buyer\",\"id\":\"" + E2 + "\",\"documentation\":\"Purchasing role.\"}],"
+                + "\"relationships\":[{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1 + "\",\"target\":\"" + E2
+                + "\",\"name\":\"assigned\",\"id\":\"" + R1 + "\",\"documentation\":\"Assigns Buyer.\"}]}";
+        Object factory = factory();
+        Object model = createModel(factory);
+        importWithDiagram(ArchiMateLLMResultParser.parse(json), model, null);
+
+        assertEquals("Customer", nameOfId(model, E1));
+        assertEquals("The buyer.", documentationOfId(model, E1));
+        assertEquals("Buyer", nameOfId(model, E2));
+        assertEquals("Purchasing role.", documentationOfId(model, E2));
+        assertEquals("assigned", nameOfId(model, R1));
+        assertEquals("Assigns Buyer.", documentationOfId(model, R1));
+    }
+
+    @Test
     public void importWithTargetDiagram_newElementIsInModelFolderAndOffsetFromExisting() throws Exception {
         Object factory = factory();
         Object model = createModel(factory);
@@ -498,6 +678,79 @@ public class ArchiMateImportFlowTest {
                 newBounds[0] == 50 && newBounds[1] == 50);
         assertTrue("New figure should sit left of or below the existing cluster",
                 newBounds[0] <= 50 || newBounds[1] >= 50 + 55);
+    }
+
+    @Test
+    public void importConnectedElement_isPlacedBesideHubNotInBottomColumn() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object existing = addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        Object diagram = addEmptyDiagram(factory, model, "Open View");
+        addFigure(factory, diagram, existing);
+
+        String json = "{\"elements\":[{\"type\":\"BusinessRole\",\"name\":\"Buyer\",\"id\":\"" + E2
+                + "\"}],\"relationships\":[{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1
+                + "\",\"target\":\"" + E2 + "\",\"id\":\"" + R1 + "\"}]}";
+        importWithDiagram(ArchiMateLLMResultParser.parse(json), model, diagram);
+
+        int[] hub = figureBoundsForElementId(diagram, E1);
+        int[] neu = figureBoundsForElementId(diagram, E2);
+        assertNotNull(hub);
+        assertNotNull(neu);
+        assertFalse("Must not overlap the hub",
+                neu[0] < hub[0] + 120 && neu[0] + 120 > hub[0] && neu[1] < hub[1] + 55 && neu[1] + 55 > hub[1]);
+        int hubCx = hub[0] + 60;
+        int hubCy = hub[1] + 27;
+        int newCx = neu[0] + 60;
+        int newCy = neu[1] + 27;
+        int dx = Math.abs(newCx - hubCx);
+        int dy = Math.abs(newCy - hubCy);
+        assertTrue("Connected figure should sit beside the hub (short arrow), not in a far column",
+                dx <= 220 && dy <= 160);
+        boolean beside = dy < 55 && neu[0] >= hub[0] + 120;
+        boolean below = dx < 80 && neu[1] >= hub[1] + 55;
+        assertTrue("First satellite around a lone hub prefers east or south", beside || below);
+    }
+
+    @Test
+    public void importSeveralElementsConnectedToSameHub_spreadAroundNotStacked() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object existing = addNamedConcept(factory, model, "createBusinessActor", "Customer", E1);
+        Object diagram = addEmptyDiagram(factory, model, "Open View");
+        addFigure(factory, diagram, existing);
+
+        String e3 = "id-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        String e4 = "id-ffffffffffffffffffffffffffffffff";
+        String r2 = "id-22222222222222222222222222222222";
+        String r3 = "id-33333333333333333333333333333333";
+        String json = "{\"elements\":["
+                + "{\"type\":\"BusinessRole\",\"name\":\"Buyer\",\"id\":\"" + E2 + "\"},"
+                + "{\"type\":\"BusinessProcess\",\"name\":\"Order\",\"id\":\"" + e3 + "\"},"
+                + "{\"type\":\"BusinessService\",\"name\":\"Shop\",\"id\":\"" + e4 + "\"}"
+                + "],\"relationships\":["
+                + "{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1 + "\",\"target\":\"" + E2 + "\",\"id\":\"" + R1 + "\"},"
+                + "{\"type\":\"AssignmentRelationship\",\"source\":\"" + E1 + "\",\"target\":\"" + e3 + "\",\"id\":\"" + r2 + "\"},"
+                + "{\"type\":\"ServingRelationship\",\"source\":\"" + e4 + "\",\"target\":\"" + E1 + "\",\"id\":\"" + r3 + "\"}"
+                + "]}";
+        importWithDiagram(ArchiMateLLMResultParser.parse(json), model, diagram);
+
+        int[] hub = figureBoundsForElementId(diagram, E1);
+        int[] a = figureBoundsForElementId(diagram, E2);
+        int[] b = figureBoundsForElementId(diagram, e3);
+        int[] c = figureBoundsForElementId(diagram, e4);
+        assertNotNull(a);
+        assertNotNull(b);
+        assertNotNull(c);
+        assertFalse(samePosition(a, b));
+        assertFalse(samePosition(a, c));
+        assertFalse(samePosition(b, c));
+        assertFalse(rectsOverlap(a, b));
+        assertFalse(rectsOverlap(a, c));
+        assertFalse(rectsOverlap(b, c));
+        assertTrue(nearHub(hub, a));
+        assertTrue(nearHub(hub, b));
+        assertTrue(nearHub(hub, c));
     }
 
     @Test
@@ -551,6 +804,15 @@ public class ArchiMateImportFlowTest {
         return name != null ? name.toString() : null;
     }
 
+    private static String documentationOfId(Object model, String id) throws Exception {
+        Object found = findById(model, id);
+        if (found == null) {
+            return null;
+        }
+        Object doc = found.getClass().getMethod("getDocumentation").invoke(found);
+        return doc != null ? doc.toString() : null;
+    }
+
     private static Object findById(Object model, String id) throws Exception {
         Object folders = model.getClass().getMethod("getFolders").invoke(model);
         return findByIdInFolders(folders, id);
@@ -599,6 +861,20 @@ public class ArchiMateImportFlowTest {
         return null;
     }
 
+    private static boolean samePosition(int[] a, int[] b) {
+        return a[0] == b[0] && a[1] == b[1];
+    }
+
+    private static boolean rectsOverlap(int[] a, int[] b) {
+        return a[0] < b[0] + 120 && a[0] + 120 > b[0] && a[1] < b[1] + 55 && a[1] + 55 > b[1];
+    }
+
+    private static boolean nearHub(int[] hub, int[] neu) {
+        int dx = Math.abs((neu[0] + 60) - (hub[0] + 60));
+        int dy = Math.abs((neu[1] + 27) - (hub[1] + 27));
+        return dx <= 280 && dy <= 220;
+    }
+
     private static Object factory() throws Exception {
         return Class.forName("com.archimatetool.model.IArchimateFactory").getField("eINSTANCE").get(null);
     }
@@ -610,10 +886,14 @@ public class ArchiMateImportFlowTest {
     }
 
     private static void importWithDiagram(ArchiMateLLMResult parsed, Object model, Object diagram) throws Exception {
+        importReturningStats(parsed, model, diagram);
+    }
+
+    private static Object importReturningStats(ArchiMateLLMResult parsed, Object model, Object diagram) throws Exception {
         Method importMethod = ArchiMateLLMImporter.class.getMethod("importIntoModel", ArchiMateLLMResult.class,
                 Class.forName("com.archimatetool.model.IArchimateModel"), Class.forName("com.archimatetool.model.IFolder"),
                 Class.forName("com.archimatetool.model.IArchimateDiagramModel"));
-        importMethod.invoke(null, parsed, model, null, diagram);
+        return importMethod.invoke(null, parsed, model, null, diagram);
     }
 
     private static Object addEmptyDiagram(Object factory, Object model, String name) throws Exception {
