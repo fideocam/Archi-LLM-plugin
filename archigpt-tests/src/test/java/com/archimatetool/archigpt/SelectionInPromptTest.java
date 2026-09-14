@@ -78,4 +78,15 @@ public class SelectionInPromptTest {
         assertTrue("Model must appear before end delimiter", modelLabel < endOfModel);
         assertTrue("User request must appear after end-of-model", requestPos > endOfModel);
     }
+
+    @Test
+    public void userMessageWithSkill_placesInstructionsAfterRequest() {
+        String userMessage = UserMessageBuilder.buildUserMessage("Current selection in the model:\n- Folder \"Business\"\n",
+                "<model/>", "Assess maturity", "Reply in plain text.");
+        int requestPos = userMessage.indexOf("User request: Assess maturity");
+        int skillPos = userMessage.indexOf(PromptLibrary.TOOL_INSTRUCTIONS_START);
+        int selPos = userMessage.indexOf("Folder \"Business\"");
+        assertTrue(requestPos >= 0 && skillPos > requestPos);
+        assertTrue(selPos > skillPos);
+    }
 }

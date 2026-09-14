@@ -80,6 +80,8 @@ public class ArchiGPTView extends ViewPart {
     private static final int MAX_CHUNKED_DEBUG_PREVIEW_CHARS = 250_000;
 
     private Text promptText;
+    private Combo promptLibraryCombo;
+    private List<PromptLibrary.Entry> promptLibraryChoices = new ArrayList<PromptLibrary.Entry>();
     private Text whatWasSentSummaryText;
     private Text xmlPreviewText;
     private Text responseText;
@@ -104,6 +106,8 @@ public class ArchiGPTView extends ViewPart {
     private Label whatWasSentLabel;
     private Label xmlPreviewLabel;
     private Job currentJob;
+    private CTabFolder tabFolder;
+    private CTabItem mainTabItem;
     /** Cached selection from model tree/diagram so it is still used when ArchiGPT view has focus. */
     private volatile IStructuredSelection lastModelSelection;
     private ISelectionListener selectionListener;
@@ -137,23 +141,19 @@ public class ArchiGPTView extends ViewPart {
         rootLayout.marginHeight = 0;
         parent.setLayout(rootLayout);
 
-        CTabFolder tabFolder = new CTabFolder(parent, SWT.TOP | SWT.BORDER);
+        tabFolder = new CTabFolder(parent, SWT.TOP | SWT.BORDER);
         tabFolder.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
-        // ---- Main tab: prompt + button + response ----
-        CTabItem mainTab = new CTabItem(tabFolder, SWT.NONE);
-        mainTab.setText("ArchiGPT");
+        // ---- Main tab: prompt + response ----
+        mainTabItem = new CTabItem(tabFolder, SWT.NONE);
+        mainTabItem.setText("ArchiGPT");
         Composite mainComposite = new Composite(tabFolder, SWT.NONE);
-        mainTab.setControl(mainComposite);
+        mainTabItem.setControl(mainComposite);
         GridLayout mainLayout = new GridLayout(1, false);
         mainLayout.marginWidth = 10;
         mainLayout.marginHeight = 10;
         mainLayout.verticalSpacing = 8;
         mainComposite.setLayout(mainLayout);
-
-        serverStatusLabel = new Label(mainComposite, SWT.WRAP);
-        serverStatusLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        serverStatusLabel.setToolTipText("Change server, model, and context size on the Server tab.");
 
         Label promptLabel = new Label(mainComposite, SWT.NONE);
         promptLabel.setText("Prompt:");
@@ -165,6 +165,7 @@ public class ArchiGPTView extends ViewPart {
         promptData.heightHint = 120;
         promptText.setLayoutData(promptData);
         promptText.setMessage("Describe the change you want to make to your ArchiMate model...");
+        promptText.setToolTipText("Press Enter to send, Shift+Enter for a new line. Prompt library and Ask are on the Tools tab.");
         promptText.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
@@ -177,25 +178,9 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
-        Composite buttonBar = new Composite(mainComposite, SWT.NONE);
-        buttonBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        GridLayout buttonLayout = new GridLayout(2, false);
-        buttonLayout.marginWidth = 0;
-        buttonLayout.marginHeight = 0;
-        buttonLayout.horizontalSpacing = 8;
-        buttonBar.setLayout(buttonLayout);
-        Label filler = new Label(buttonBar, SWT.NONE);
-        filler.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        sendButton = new Button(buttonBar, SWT.PUSH);
-        sendButton.setText("Ask ArchiGPT");
-        sendButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
-        sendButton.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                if (currentJob != null) onStopRequest(); else onSendPrompt();
-            }
-        });
+        Label promptHint = new Label(mainComposite, SWT.WRAP);
+        promptHint.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        promptHint.setText("Press Enter to send (Shift+Enter for a new line). Ready-made tools and Ask ArchiGPT are on the Tools tab.");
 
         Label responseLabel = new Label(mainComposite, SWT.NONE);
         responseLabel.setText("Response:");
@@ -218,9 +203,73 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
-        // ---- Server tab: URL, model, context ----
+        // ---- Tools tab: prompt library + run ----
+        CTabItem toolsTab = new CTabItem(tabFolder, SWT.NONE);
+        toolsTab.setText("Tools");
+        Composite toolsComposite = new Composite(tabFolder, SWT.NONE);
+        toolsTab.setControl(toolsComposite);
+        GridLayout toolsTabLayout = new GridLayout(1, false);
+        toolsTabLayout.marginWidth = 10;
+        toolsTabLayout.marginHeight = 10;
+        toolsTabLayout.verticalSpacing = 8;
+        toolsComposite.setLayout(toolsTabLayout);
+
+        Label toolsIntro = new Label(toolsComposite, SWT.WRAP);
+        GridData toolsIntroData = new GridData(SWT.FILL, SWT.TOP, true, false);
+        toolsIntroData.widthHint = 400;
+        toolsIntro.setLayoutData(toolsIntroData);
+        toolsIntro.setText("Choose a validation, pattern, or analysis tool. That fills the prompt on the ArchiGPT tab; you can edit it there before asking.");
+
+        Composite toolsRow = new Composite(toolsComposite, SWT.NONE);
+        toolsRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout toolsLayout = new GridLayout(2, false);
+        toolsLayout.marginWidth = 0;
+        toolsLayout.marginHeight = 0;
+        toolsLayout.horizontalSpacing = 8;
+        toolsRow.setLayout(toolsLayout);
+
+        Label toolsLabel = new Label(toolsRow, SWT.NONE);
+        toolsLabel.setText("Tool:");
+        GridData toolsLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
+        toolsLabelData.widthHint = 48;
+        toolsLabel.setLayoutData(toolsLabelData);
+
+        promptLibraryCombo = new Combo(toolsRow, SWT.DROP_DOWN | SWT.READ_ONLY);
+        promptLibraryCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        populatePromptLibraryCombo();
+        promptLibraryCombo.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                onPromptLibrarySelected();
+            }
+        });
+
+        Composite toolsButtonBar = new Composite(toolsComposite, SWT.NONE);
+        toolsButtonBar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        GridLayout toolsButtonLayout = new GridLayout(2, false);
+        toolsButtonLayout.marginWidth = 0;
+        toolsButtonLayout.marginHeight = 0;
+        toolsButtonLayout.horizontalSpacing = 8;
+        toolsButtonBar.setLayout(toolsButtonLayout);
+        Label toolsFiller = new Label(toolsButtonBar, SWT.NONE);
+        toolsFiller.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        sendButton = new Button(toolsButtonBar, SWT.PUSH);
+        sendButton.setText("Ask ArchiGPT");
+        sendButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        sendButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                if (currentJob != null) onStopRequest(); else onSendPrompt();
+            }
+        });
+
+        Label toolsSpacer = new Label(toolsComposite, SWT.NONE);
+        toolsSpacer.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+
+        // ---- Settings tab: URL, model, context ----
         CTabItem serverTab = new CTabItem(tabFolder, SWT.NONE);
-        serverTab.setText("Server");
+        serverTab.setText("Settings");
         Composite serverComposite = new Composite(tabFolder, SWT.NONE);
         serverTab.setControl(serverComposite);
         GridLayout serverLayout = new GridLayout(1, false);
@@ -228,6 +277,10 @@ public class ArchiGPTView extends ViewPart {
         serverLayout.marginHeight = 10;
         serverLayout.verticalSpacing = 10;
         serverComposite.setLayout(serverLayout);
+
+        serverStatusLabel = new Label(serverComposite, SWT.WRAP);
+        serverStatusLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        serverStatusLabel.setToolTipText("Current Ollama model, server URL, and context size.");
 
         Composite serverRow = new Composite(serverComposite, SWT.NONE);
         serverRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
@@ -271,7 +324,7 @@ public class ArchiGPTView extends ViewPart {
         }
 
         Button settingsButton = new Button(serverRow, SWT.PUSH);
-        settingsButton.setText("Settings…");
+        settingsButton.setText("Preferences…");
         settingsButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
         settingsButton.addSelectionListener(new SelectionAdapter() {
             @Override
@@ -790,7 +843,9 @@ public class ArchiGPTView extends ViewPart {
             promptText.setEditable(!inProgress);
             promptText.setForeground(promptText.getDisplay().getSystemColor(
                     inProgress ? SWT.COLOR_DARK_GRAY : SWT.COLOR_WIDGET_FOREGROUND));
-            sendButton.setText(inProgress ? "Stop ArchiGPT" : "Ask ArchiGPT");
+            if (sendButton != null && !sendButton.isDisposed()) {
+                sendButton.setText(inProgress ? "Stop ArchiGPT" : "Ask ArchiGPT");
+            }
         };
         if (Display.getCurrent() != null) {
             update.run();
@@ -1069,6 +1124,54 @@ public class ArchiGPTView extends ViewPart {
         return merged;
     }
 
+    private void showMainTab() {
+        if (tabFolder != null && !tabFolder.isDisposed() && mainTabItem != null && !mainTabItem.isDisposed()) {
+            tabFolder.setSelection(mainTabItem);
+        }
+    }
+
+    private void populatePromptLibraryCombo() {
+        promptLibraryChoices.clear();
+        if (promptLibraryCombo == null || promptLibraryCombo.isDisposed()) {
+            return;
+        }
+        promptLibraryCombo.removeAll();
+        promptLibraryCombo.add(PromptLibrary.NONE_LABEL);
+        promptLibraryChoices.add(null);
+        List<PromptLibrary.Entry> entries = PromptLibrary.all();
+        for (int i = 0; i < entries.size(); i++) {
+            PromptLibrary.Entry e = entries.get(i);
+            promptLibraryCombo.add(e.comboLabel());
+            promptLibraryChoices.add(e);
+        }
+        promptLibraryCombo.select(0);
+        if (entries.isEmpty()) {
+            promptLibraryCombo.setToolTipText("Ready-made validation and pattern prompts were not found in the plugin.");
+        } else {
+            promptLibraryCombo.setToolTipText(
+                    "Optional validation, pattern, or analysis tool. Choosing one fills the prompt; you can still edit it. Tool instructions are sent with the request.");
+        }
+    }
+
+    private PromptLibrary.Entry selectedPromptLibraryEntry() {
+        if (promptLibraryCombo == null || promptLibraryCombo.isDisposed()) {
+            return null;
+        }
+        int i = promptLibraryCombo.getSelectionIndex();
+        if (i <= 0 || i >= promptLibraryChoices.size()) {
+            return null;
+        }
+        return promptLibraryChoices.get(i);
+    }
+
+    private void onPromptLibrarySelected() {
+        PromptLibrary.Entry e = selectedPromptLibraryEntry();
+        if (e == null || promptText == null || promptText.isDisposed()) {
+            return;
+        }
+        promptText.setText(e.prompt);
+    }
+
     private void onStopRequest() {
         userRequestedCancel = true;
         responseText.setText("Cancelling…");
@@ -1132,6 +1235,7 @@ public class ArchiGPTView extends ViewPart {
     }
 
     private void onSendPrompt() {
+        showMainTab();
         String prompt = promptText.getText().trim();
         if (prompt.isEmpty()) {
             responseText.setText("Please enter a prompt.");
@@ -1184,6 +1288,11 @@ public class ArchiGPTView extends ViewPart {
         }
         final String selectionContextFinal = selectionContext;
         final String promptFinal = prompt;
+        final PromptLibrary.Entry selectedTool = selectedPromptLibraryEntry();
+        final String skillBodyFinal = selectedTool != null ? selectedTool.skillBody : "";
+        final boolean analysisOnly = selectedTool != null && !selectedTool.analysisOnly
+                ? false
+                : AnalysisPromptIntent.likelyAnalysisOnly(promptFinal);
         final String ollamaModelResolved = LlmContextConfig.resolveOllamaModel(
                 ollamaModelCombo != null && !ollamaModelCombo.isDisposed() ? ollamaModelCombo.getText() : "");
         persistOllamaBaseUrlFromField();
@@ -1200,7 +1309,8 @@ public class ArchiGPTView extends ViewPart {
         final boolean useModelMax = isUseModelMaxSelected();
         final int uiNumCtx = parseContextSizeField();
         final int numCtxForOllama = LlmContextConfig.resolveOllamaNumCtx(reportedOllamaCtx, uiNumCtx, useModelMax);
-        int overheadEstimate = UserMessageBuilder.estimateNonXmlOverheadChars(selectionContextFinal, promptFinal);
+        int overheadEstimate = UserMessageBuilder.estimateNonXmlOverheadChars(selectionContextFinal, promptFinal,
+                skillBodyFinal);
         final int maxXmlChars = LlmContextConfig.resolveMaxXmlChars(numCtxForOllama,
                 ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), overheadEstimate);
 
@@ -1213,7 +1323,7 @@ public class ArchiGPTView extends ViewPart {
         int fullXmlLength = fullModelXml.length();
 
         boolean useChunkedAnalysis = LlmContextConfig.chunkedAnalysisEnabled()
-                && AnalysisPromptIntent.likelyAnalysisOnly(promptFinal)
+                && analysisOnly
                 && fullXmlLength > maxXmlChars;
         List<ModelContextChunkPlanner.PlannedChunk> plannedChunks = null;
         boolean usedSemanticChunks = false;
@@ -1291,6 +1401,10 @@ public class ArchiGPTView extends ViewPart {
             summary.append("Active model sent to Ollama: \"").append(model.getName() != null ? model.getName() : "").append("\"\n\n");
         }
         summary.append("Prompt: ").append(promptFinal).append("\n\n");
+        if (selectedTool != null) {
+            summary.append("Tool: ").append(selectedTool.comboLabel()).append(" (").append(selectedTool.id)
+                    .append(selectedTool.analysisOnly ? ", report only" : ", apply to model").append(")\n\n");
+        }
         summary.append("Selection context: ").append(selectionContextFinal != null && !selectionContextFinal.isEmpty() ? selectionContextFinal.trim() : "(none)").append("\n\n");
         summary.append("Ollama server: ").append(ollamaBaseUrlResolved);
         if (LlmContextConfig.hasExplicitOllamaBaseUrl()) {
@@ -1311,12 +1425,12 @@ public class ArchiGPTView extends ViewPart {
                     summary.append(" (clamped to ArchiGPT maximum of ").append(LlmContextConfig.OLLAMA_NUM_CTX_MAX)
                             .append(")");
                 } else {
-            summary.append(" (below Ollama max; enable Use model max on the Server tab or type a larger Context size)");
+            summary.append(" (below Ollama max; enable Use model max on the Settings tab or type a larger Context size)");
                 }
             }
         } else {
             summary.append("could not read context from /api/show; using num_ctx=").append(numCtxForOllama)
-                    .append(" (set Context size on the Server tab, or -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX)
+                    .append(" (set Context size on the Settings tab, or -D").append(LlmContextConfig.PROP_OLLAMA_NUM_CTX)
                     .append(" to override)");
         }
         summary.append(". Max model XML chars=").append(maxXmlChars);
@@ -1378,7 +1492,7 @@ public class ArchiGPTView extends ViewPart {
         if (xmlPreviewText != null && !xmlPreviewText.isDisposed()) {
             if (chunkedAnalysis && analysisPlannedChunks != null && !analysisPlannedChunks.isEmpty()) {
                 xmlPreviewText.setText(buildChunkedOllamaDebugPreview(analysisModelDigest, analysisPlannedChunks,
-                        selectionContextFinal, promptFinal, MAX_CHUNKED_DEBUG_PREVIEW_CHARS));
+                        selectionContextFinal, promptFinal, skillBodyFinal, MAX_CHUNKED_DEBUG_PREVIEW_CHARS));
             } else {
                 xmlPreviewText.setText(modelXmlForRequest != null ? modelXmlForRequest : "");
             }
@@ -1388,7 +1502,8 @@ public class ArchiGPTView extends ViewPart {
         final IArchimateModel modelForImport = model;
 
         final String userMessage = chunkedAnalysis ? ""
-                : UserMessageBuilder.buildUserMessage(selectionContextFinal, modelXmlForRequest, promptFinal);
+                : UserMessageBuilder.buildUserMessage(selectionContextFinal, modelXmlForRequest, promptFinal,
+                        skillBodyFinal);
         if (!chunkedAnalysis) {
             summary.append(LlmContextConfig.contextPerformanceWarning(fullXmlLength, xmlLen, userMessage.length(),
                     ArchiMateSystemPrompt.SYSTEM_PROMPT.length(), numCtxForOllama));
@@ -1449,7 +1564,7 @@ public class ArchiGPTView extends ViewPart {
                                 String scope = pc.title != null && !pc.title.isEmpty() ? " — " + pc.title : "";
                                 updateStatus("Analysis excerpt " + (i + 1) + "/" + analysisPlannedChunks.size() + scope + " — Ollama…");
                                 String chunkUser = ChunkAnalysisPrompt.buildChunkUserMessage(analysisModelDigest, pc.title, pc.xml,
-                                        i + 1, analysisPlannedChunks.size(), selectionContextFinal, promptFinal);
+                                        i + 1, analysisPlannedChunks.size(), selectionContextFinal, promptFinal, skillBodyFinal);
                                 String part = client.generateWithSystemPrompt(ChunkAnalysisPrompt.SYSTEM_PROMPT, chunkUser,
                                         currentConnectionRef, numCtxForOllama);
                                 acc.append("--- Excerpt ").append(i + 1).append("/").append(analysisPlannedChunks.size());
@@ -1570,12 +1685,12 @@ public class ArchiGPTView extends ViewPart {
                     if (errLower.contains("timed out")) {
                         toShow += "\n\nLarge num_ctx (" + numCtxForOllama
                                 + ") makes Ollama allocate a KV cache of that size before it starts generating, which often exceeds a short HTTP timeout. "
-                                + "On the Server tab, uncheck Use model max or type a smaller Context size (32768 or 65536). "
+                                + "On the Settings tab, uncheck Use model max or type a smaller Context size (32768 or 65536). "
                                 + "Ollama max is the model's architecture limit from this server, not a size that always fits in VRAM. "
                                 + "To wait longer, set -D" + LlmContextConfig.PROP_OLLAMA_READ_TIMEOUT_MS + "=0 in Archi.ini (vmargs).";
                     } else if (errLower.contains("memory") || errLower.contains("out of mem") || errLower.contains("cuda")) {
                         toShow += "\n\nOllama could not allocate num_ctx=" + numCtxForOllama
-                                + " for this model. That value is the architecture maximum from /api/show. Uncheck Use model max on the Server tab and try 32768 or 65536.";
+                                + " for this model. That value is the architecture maximum from /api/show. Uncheck Use model max on the Settings tab and try 32768 or 65536.";
                     }
                     if (raw != null) {
                         toShow += "\n\nRaw LLM response:\n" + truncate(raw, 4000);
@@ -1596,7 +1711,8 @@ public class ArchiGPTView extends ViewPart {
      * Full user message for each chunked analysis call (matches what is sent to Ollama) for the Debug XML preview.
      */
     private static String buildChunkedOllamaDebugPreview(String digest,
-            List<ModelContextChunkPlanner.PlannedChunk> chunks, String selectionContext, String prompt, int maxChars) {
+            List<ModelContextChunkPlanner.PlannedChunk> chunks, String selectionContext, String prompt,
+            String skillBody, int maxChars) {
         if (chunks == null || chunks.isEmpty()) {
             return "";
         }
@@ -1611,7 +1727,8 @@ public class ArchiGPTView extends ViewPart {
             }
             sb.append(header);
             ModelContextChunkPlanner.PlannedChunk pc = chunks.get(i);
-            String um = ChunkAnalysisPrompt.buildChunkUserMessage(digest, pc.title, pc.xml, i + 1, n, selectionContext, prompt);
+            String um = ChunkAnalysisPrompt.buildChunkUserMessage(digest, pc.title, pc.xml, i + 1, n, selectionContext,
+                    prompt, skillBody);
             if (sb.length() + um.length() > maxChars) {
                 int take = maxChars - sb.length() - 32;
                 if (take > 0) {

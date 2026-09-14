@@ -57,11 +57,11 @@ Skills complement:
 
 ### With ArchiGPT / Ollama (this repo)
 
-ArchiGPT sends a **fixed system prompt** from `com.archimatetool.archigpt/system-prompt.txt` plus the model XML and user request. It does **not** today load external skill files automatically. To “use a skill” with ArchiGPT you can:
+ArchiGPT sends a **fixed system prompt** from `com.archimatetool.archigpt/system-prompt.txt` plus the model XML and user request. Bundled tools live under `com.archimatetool.archigpt/skills/` (validate, pattern, analyse). The **Tools** tab combo loads one skill and appends it to the user message (not the global system prompt). You can still:
 
 1. **Edit the system prompt** — merge skill content into `system-prompt.txt` (good for behaviors that must always apply to ArchiMate JSON/XML).  
-2. **Put skill text in the user message** — prepend “Follow these rules: …” in the ArchiGPT prompt box (good for experiments without redeploying the plugin).  
-3. **Implement skill loading** — see [Implementing skills in this plugin](#implementing-skills-in-this-plugin-archigpt) below.
+2. **Put extra skill text in the user message** — edit the filled prompt, or prepend rules in the prompt box.  
+3. **Add files to the catalog** — list a new Markdown file in `skills/catalog.txt` (see [Implementing skills in this plugin](#implementing-skills-in-this-plugin-archigpt) below).
 
 ---
 
@@ -148,6 +148,7 @@ If you need **live data** (e.g. query Archi’s model via an API), use **MCP ser
 ## Related files in this repository
 
 - `com.archimatetool.archigpt/system-prompt.txt` — LLM system instructions for ArchiGPT  
+- `com.archimatetool.archigpt/skills/` — bundled Validate / Pattern / Analyse tools (`catalog.txt`)  
 - `docs/EXTERNAL_LLM_PLAN.md`, `docs/CONVERSATIONAL_CHAT.md` — broader LLM integration notes  
 
 For Cursor-specific skill authoring steps, follow Cursor’s official **create skill** / **Agent Skills** documentation for your installed version, since install paths and discovery rules change over time.

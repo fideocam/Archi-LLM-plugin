@@ -26,22 +26,45 @@ public final class UserMessageBuilder {
      * preserve the start of the context). Then a clear delimiter and the user request + selection.
      */
     public static String buildUserMessage(String selectionContext, String modelXml, String prompt) {
+        return buildUserMessage(selectionContext, modelXml, prompt, null);
+    }
+
+    /**
+     * @param skillBody optional tool instructions from {@link PromptLibrary}; truncated and wrapped
+     */
+    public static String buildUserMessage(String selectionContext, String modelXml, String prompt, String skillBody) {
         StringBuilder sb = new StringBuilder();
         if (modelXml != null && !modelXml.isEmpty()) {
             sb.append("ArchiMate model (Open Exchange XML):\n\n").append(modelXml).append("\n\n");
         }
         sb.append("--- END OF MODEL ---\n\n");
         sb.append("User request: ").append(prompt != null ? prompt : "").append("\n\n");
+        appendSkill(sb, skillBody);
         if (selectionContext != null && !selectionContext.isEmpty()) {
             sb.append(selectionContext);
         }
         return sb.toString();
     }
 
+    static void appendSkill(StringBuilder sb, String skillBody) {
+        String skill = PromptLibrary.truncateSkill(skillBody);
+        if (skill.isEmpty()) {
+            return;
+        }
+        sb.append(PromptLibrary.TOOL_INSTRUCTIONS_START).append('\n').append(skill).append('\n')
+                .append(PromptLibrary.TOOL_INSTRUCTIONS_END).append("\n\n");
+    }
+
     /** Approximate user-message size excluding model XML (for context budgeting). */
     public static int estimateNonXmlOverheadChars(String selectionContext, String prompt) {
+        return estimateNonXmlOverheadChars(selectionContext, prompt, null);
+    }
+
+    public static int estimateNonXmlOverheadChars(String selectionContext, String prompt, String skillBody) {
         int sc = selectionContext != null ? selectionContext.length() : 0;
         int pr = prompt != null ? prompt.length() : 0;
-        return sc + pr + 120;
+        String skill = PromptLibrary.truncateSkill(skillBody);
+        int sk = skill.isEmpty() ? 0 : skill.length() + 80;
+        return sc + pr + sk + 120;
     }
 }

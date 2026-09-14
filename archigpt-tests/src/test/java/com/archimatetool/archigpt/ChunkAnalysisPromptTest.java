@@ -18,6 +18,16 @@ public class ChunkAnalysisPromptTest {
         assertTrue(msg.contains("This excerpt scope: " + title));
         assertTrue(msg.contains(xml));
         assertTrue(msg.contains("User request: Summarize"));
+        assertFalse(msg.contains(PromptLibrary.TOOL_INSTRUCTIONS_START));
+    }
+
+    @Test
+    public void buildChunkUserMessage_includesSkillInstructions() {
+        String msg = ChunkAnalysisPrompt.buildChunkUserMessage("digest", "scope", "<x/>", 1, 2, "", "Review",
+                "Cite element ids.");
+        assertTrue(msg.contains(PromptLibrary.TOOL_INSTRUCTIONS_START));
+        assertTrue(msg.contains("Cite element ids."));
+        assertTrue(msg.contains(PromptLibrary.TOOL_INSTRUCTIONS_END));
     }
 
     @Test
