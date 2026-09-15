@@ -48,6 +48,7 @@ import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IMemento;
 import org.eclipse.ui.ISelectionListener;
 import org.eclipse.ui.IViewSite;
+import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PartInitException;
@@ -57,6 +58,7 @@ import com.archimatetool.archigpt.preferences.ArchiGPTPreferencePage;
 import com.archimatetool.editor.model.IEditorModelManager;
 import com.archimatetool.model.IArchimateConcept;
 import com.archimatetool.model.IArchimateDiagramModel;
+import com.archimatetool.model.IArchimateElement;
 import com.archimatetool.model.IArchimateModel;
 import com.archimatetool.model.IArchimateModelObject;
 import com.archimatetool.model.IDiagramModel;
@@ -282,19 +284,17 @@ public class ArchiGPTView extends ViewPart {
         serverStatusLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         serverStatusLabel.setToolTipText("Current Ollama model, server URL, and context size.");
 
+        Label serverLabel = new Label(serverComposite, SWT.NONE);
+        serverLabel.setText("Ollama server:");
+        serverLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
         Composite serverRow = new Composite(serverComposite, SWT.NONE);
         serverRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        GridLayout serverRowLayout = new GridLayout(3, false);
+        GridLayout serverRowLayout = new GridLayout(2, false);
         serverRowLayout.marginWidth = 0;
         serverRowLayout.marginHeight = 0;
         serverRowLayout.horizontalSpacing = 8;
         serverRow.setLayout(serverRowLayout);
-
-        Label serverLabel = new Label(serverRow, SWT.NONE);
-        serverLabel.setText("Ollama server:");
-        GridData serverLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
-        serverLabelData.widthHint = 100;
-        serverLabel.setLayoutData(serverLabelData);
 
         ollamaBaseUrlText = new Text(serverRow, SWT.BORDER);
         ollamaBaseUrlText.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
@@ -333,19 +333,17 @@ public class ArchiGPTView extends ViewPart {
             }
         });
 
+        Label modelLabel = new Label(serverComposite, SWT.NONE);
+        modelLabel.setText("Ollama model:");
+        modelLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
         Composite modelRow = new Composite(serverComposite, SWT.NONE);
         modelRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        GridLayout modelRowLayout = new GridLayout(3, false);
+        GridLayout modelRowLayout = new GridLayout(2, false);
         modelRowLayout.marginWidth = 0;
         modelRowLayout.marginHeight = 0;
         modelRowLayout.horizontalSpacing = 8;
         modelRow.setLayout(modelRowLayout);
-
-        Label modelLabel = new Label(modelRow, SWT.NONE);
-        modelLabel.setText("Ollama model:");
-        GridData modelLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
-        modelLabelData.widthHint = 100;
-        modelLabel.setLayoutData(modelLabelData);
 
         ollamaModelCombo = new Combo(modelRow, SWT.DROP_DOWN);
         GridData comboData = new GridData(SWT.FILL, SWT.CENTER, true, false);
@@ -388,23 +386,20 @@ public class ArchiGPTView extends ViewPart {
             refreshServerStatusLine();
         });
 
+        Label contextLabel = new Label(serverComposite, SWT.NONE);
+        contextLabel.setText("Context size:");
+        contextLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
         Composite contextRow = new Composite(serverComposite, SWT.NONE);
         contextRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        GridLayout contextRowLayout = new GridLayout(5, false);
+        GridLayout contextRowLayout = new GridLayout(2, false);
         contextRowLayout.marginWidth = 0;
         contextRowLayout.marginHeight = 0;
         contextRowLayout.horizontalSpacing = 8;
         contextRow.setLayout(contextRowLayout);
 
-        Label contextLabel = new Label(contextRow, SWT.NONE);
-        contextLabel.setText("Context size:");
-        GridData contextLabelData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
-        contextLabelData.widthHint = 100;
-        contextLabel.setLayoutData(contextLabelData);
-
         contextSizeText = new Text(contextRow, SWT.BORDER);
-        GridData contextSizeData = new GridData(SWT.LEFT, SWT.CENTER, false, false);
-        contextSizeData.widthHint = 80;
+        GridData contextSizeData = new GridData(SWT.FILL, SWT.CENTER, true, false);
         contextSizeText.setLayoutData(contextSizeData);
         customNumCtx = ArchiGPTPreferences.getNumCtx();
         contextSizeText.setText(Integer.toString(customNumCtx));
@@ -428,16 +423,16 @@ public class ArchiGPTView extends ViewPart {
         Label tokensLabel = new Label(contextRow, SWT.NONE);
         tokensLabel.setText("tokens");
 
-        contextMaxLabel = new Label(contextRow, SWT.NONE);
+        contextMaxLabel = new Label(serverComposite, SWT.WRAP);
         contextMaxLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         contextMaxLabel.setText("Ollama max: …");
         contextMaxLabel.setToolTipText(
                 "Largest context_length / num_ctx reported by this Ollama server for the selected model (POST /api/show). "
                         + "That is the architecture limit, not a recommended request size.");
 
-        useModelMaxButton = new Button(contextRow, SWT.CHECK);
+        useModelMaxButton = new Button(serverComposite, SWT.CHECK);
         useModelMaxButton.setText("Use model max");
-        useModelMaxButton.setLayoutData(new GridData(SWT.END, SWT.CENTER, false, false));
+        useModelMaxButton.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         useModelMaxButton.setToolTipText(
                 "Request this model's full architecture context from Ollama. That allocates a KV cache of that size and can "
                         + "fail or take many minutes if VRAM is insufficient — even on a large GPU.");
@@ -502,8 +497,10 @@ public class ArchiGPTView extends ViewPart {
         tabFolder.setSelection(0);
 
         selectionListener = (part, selection) -> {
-            if (selection != null && SelectionContextBuilder.isModelSelection(selection)) {
-                lastModelSelection = (IStructuredSelection) selection;
+            if (selection instanceof IStructuredSelection
+                    && SelectionContextBuilder.isModelSelection(selection)) {
+                lastModelSelection = SelectionContextBuilder.unwrapStructuredSelection(
+                        (IStructuredSelection) selection);
             }
         };
         getViewSite().getPage().addSelectionListener(selectionListener);
@@ -860,7 +857,7 @@ public class ArchiGPTView extends ViewPart {
         Set<IFolder> seen = new LinkedHashSet<>();
         List<IFolder> list = new ArrayList<>();
         for (Iterator<?> it = selection.iterator(); it.hasNext(); ) {
-            Object obj = it.next();
+            Object obj = SelectionContextBuilder.toModelObject(it.next());
             if (obj instanceof IFolder) {
                 IFolder f = (IFolder) obj;
                 if (model.equals(f.getArchimateModel()) && !seen.contains(f)) {
@@ -876,6 +873,18 @@ public class ArchiGPTView extends ViewPart {
                         list.add(f);
                     }
                 }
+            } else if (obj instanceof IDiagramModelArchimateObject) {
+                IArchimateElement el = ((IDiagramModelArchimateObject) obj).getArchimateElement();
+                if (el != null) {
+                    Object container = el.eContainer();
+                    if (container instanceof IFolder) {
+                        IFolder f = (IFolder) container;
+                        if (model.equals(f.getArchimateModel()) && !seen.contains(f)) {
+                            seen.add(f);
+                            list.add(f);
+                        }
+                    }
+                }
             }
         }
         return list;
@@ -887,7 +896,7 @@ public class ArchiGPTView extends ViewPart {
         Set<IArchimateDiagramModel> seen = new LinkedHashSet<>();
         List<IArchimateDiagramModel> list = new ArrayList<>();
         for (Iterator<?> it = selection.iterator(); it.hasNext(); ) {
-            Object obj = it.next();
+            Object obj = SelectionContextBuilder.toModelObject(it.next());
             if (obj instanceof IArchimateDiagramModel) {
                 IArchimateDiagramModel dm = (IArchimateDiagramModel) obj;
                 if (model.equals(dm.getArchimateModel()) && !seen.contains(dm)) {
@@ -923,7 +932,7 @@ public class ArchiGPTView extends ViewPart {
 
     private static IFolder resolveTargetFolder(IStructuredSelection selection, IArchimateModel model) {
         if (selection == null || selection.isEmpty() || model == null) return null;
-        Object first = selection.getFirstElement();
+        Object first = SelectionContextBuilder.toModelObject(selection.getFirstElement());
         if (first instanceof IFolder) {
             IFolder f = (IFolder) first;
             return model.equals(f.getArchimateModel()) ? f : null;
@@ -935,13 +944,20 @@ public class ArchiGPTView extends ViewPart {
                 return model.equals(f.getArchimateModel()) ? f : null;
             }
         }
+        if (first instanceof IDiagramModelArchimateObject) {
+            IArchimateElement el = ((IDiagramModelArchimateObject) first).getArchimateElement();
+            if (el != null && el.eContainer() instanceof IFolder) {
+                IFolder f = (IFolder) el.eContainer();
+                return model.equals(f.getArchimateModel()) ? f : null;
+            }
+        }
         return null;
     }
 
     private static IArchimateDiagramModel resolveTargetDiagram(IStructuredSelection selection, IArchimateModel model, IWorkbenchWindow window) {
         if (model == null) return null;
         if (selection != null && !selection.isEmpty()) {
-            Object first = selection.getFirstElement();
+            Object first = SelectionContextBuilder.toModelObject(selection.getFirstElement());
             if (first instanceof IArchimateDiagramModel && model.equals(((IArchimateDiagramModel) first).getArchimateModel())) {
                 return (IArchimateDiagramModel) first;
             }
@@ -1036,7 +1052,7 @@ public class ArchiGPTView extends ViewPart {
     private static IArchimateModel getModelFromStructuredSelection(IStructuredSelection selection) {
         if (selection == null || selection.isEmpty()) return null;
         for (Iterator<?> it = selection.iterator(); it.hasNext(); ) {
-            Object obj = it.next();
+            Object obj = SelectionContextBuilder.toModelObject(it.next());
             if (obj instanceof IArchimateModelObject) {
                 IArchimateModel m = ((IArchimateModelObject) obj).getArchimateModel();
                 if (m != null) return m;
@@ -1234,6 +1250,32 @@ public class ArchiGPTView extends ViewPart {
         }
     }
 
+    private IStructuredSelection resolveModelSelection() {
+        try {
+            IWorkbenchWindow window = getViewSite() != null ? getViewSite().getWorkbenchWindow() : null;
+            if (window != null) {
+                if (window.getSelectionService() != null) {
+                    ISelection current = window.getSelectionService().getSelection();
+                    if (SelectionContextBuilder.isModelSelection(current)) {
+                        return SelectionContextBuilder.unwrapStructuredSelection((IStructuredSelection) current);
+                    }
+                }
+                IWorkbenchPage page = window.getActivePage();
+                if (page != null) {
+                    IEditorPart editor = page.getActiveEditor();
+                    if (editor != null && editor.getSite() != null && editor.getSite().getSelectionProvider() != null) {
+                        ISelection editorSel = editor.getSite().getSelectionProvider().getSelection();
+                        if (SelectionContextBuilder.isModelSelection(editorSel)) {
+                            return SelectionContextBuilder.unwrapStructuredSelection((IStructuredSelection) editorSel);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return lastModelSelection;
+    }
+
     private void onSendPrompt() {
         showMainTab();
         String prompt = promptText.getText().trim();
@@ -1246,27 +1288,16 @@ public class ArchiGPTView extends ViewPart {
             return;
         }
 
-        IStructuredSelection selectionCandidate = null;
-        try {
-            IWorkbenchWindow window = getViewSite().getWorkbenchWindow();
-            if (window != null && window.getSelectionService() != null) {
-                ISelection current = window.getSelectionService().getSelection();
-                if (SelectionContextBuilder.isModelSelection(current)) {
-                    selectionCandidate = (IStructuredSelection) current;
-                }
-                if (selectionCandidate == null) {
-                    selectionCandidate = lastModelSelection;
-                }
-            }
-        } catch (Exception e) {
-            selectionCandidate = lastModelSelection;
-        }
+        IStructuredSelection selectionCandidate = resolveModelSelection();
 
         IWorkbenchWindow windowEarly = getViewSite() != null ? getViewSite().getWorkbenchWindow() : null;
         List<IArchimateModel> openModels = IEditorModelManager.INSTANCE.getModels();
         IArchimateModel model = resolveActiveModel(windowEarly, selectionCandidate, lastModelSelection, openModels);
 
         IStructuredSelection selectionToUse = selectionCandidate;
+        if (selectionToUse != null) {
+            selectionToUse = SelectionContextBuilder.unwrapStructuredSelection(selectionToUse);
+        }
         if (selectionToUse != null && model != null) {
             IArchimateModel selModel = getModelFromStructuredSelection(selectionToUse);
             if (selModel != null && !selModel.equals(model)) {

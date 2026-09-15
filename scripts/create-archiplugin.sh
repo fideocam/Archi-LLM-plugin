@@ -1,11 +1,12 @@
 #!/bin/sh
-# Create ArchiGPT.archiplugin for installation via Help → Manage Archi Plug-ins.
+# Create export/latest/ArchiGPT.archiplugin for Help → Manage Archi Plug-ins.
 # Run from repo root after building the plugin (mvn package -pl com.archimatetool.archigpt ...).
+# Promote a known-good copy by hand: cp export/latest/ArchiGPT.archiplugin export/stable/ArchiGPT.archiplugin
 
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 JAR="$ROOT/com.archimatetool.archigpt/target/com.archimatetool.archigpt-1.0.0-SNAPSHOT.jar"
-OUT="$ROOT/export build/ArchiGPT.archiplugin"
+OUT="$ROOT/export/latest/ArchiGPT.archiplugin"
 
 if [ ! -f "$JAR" ]; then
   echo "Plugin JAR not found. Build from repo root, for example:"
@@ -13,7 +14,7 @@ if [ ! -f "$JAR" ]; then
   exit 1
 fi
 
-mkdir -p "$ROOT/export build"
+mkdir -p "$ROOT/export/latest"
 # .archiplugin = zip with magic entry "archi-plugin" + plugin JAR (see Archi DropinsPluginHandler)
 python3 - "$OUT" "$JAR" << 'PY'
 import zipfile, os, sys

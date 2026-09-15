@@ -5,8 +5,10 @@ This document describes how to build the ArchiGPT plugin from source. For instal
 ## Build output
 
 - **Maven:** `com.archimatetool.archigpt/target/com.archimatetool.archigpt_*.jar`
-- **Ant:** `build-output/`
-- **Installable package:** `export build/ArchiGPT.archiplugin` from Maven (and root `export/ArchiGPT.archiplugin` when refreshed by the pre-push hook) for **Help → Manage Archi Plug-ins**
+- **Ant:** `build-output/` (gitignored JAR output; not an `.archiplugin`)
+- **Latest installable package:** `export/latest/ArchiGPT.archiplugin` — written by Maven and `scripts/create-archiplugin.sh`
+- **Stable installable package:** `export/stable/ArchiGPT.archiplugin` — copy latest here by hand when a build is known-good
+- **Tagged releases:** GitHub Releases (attach `export/latest/ArchiGPT.archiplugin` or the stable copy you just promoted). Do not keep a third plugin zip in the repo.
 
 After building, see the [README](../README.md#installing-the-plugin) for how to install and use the plugin in Archi.
 
@@ -87,7 +89,7 @@ mvn clean package -P with-archi -DskipTests
 
 ### Creating the installable .archiplugin
 
-When you run `mvn clean package -P with-archi` from the repo root, the build creates **`export build/ArchiGPT.archiplugin`** automatically after the plugin JAR is built. The pre-push hook additionally refreshes **`export/ArchiGPT.archiplugin`** for convenience.
+When you run `mvn clean package -P with-archi` from the repo root, the build creates **`export/latest/ArchiGPT.archiplugin`** automatically after the plugin JAR is built.
 
 To create or update it manually (e.g. after a previous build), run from the repo root:
 
@@ -95,9 +97,17 @@ To create or update it manually (e.g. after a previous build), run from the repo
 ./scripts/create-archiplugin.sh
 ```
 
-(or `sh scripts/create-archiplugin.sh` if the script is not executable). This produces **`export build/ArchiGPT.archiplugin`** for **Help → Manage Archi Plug-ins**.
+(or `sh scripts/create-archiplugin.sh` if the script is not executable). This produces **`export/latest/ArchiGPT.archiplugin`** for **Help → Manage Archi Plug-ins**.
 
-**Auto-build on push:** To have the plugin built and the export updated every time you run `git push`, install the pre-push hook: `cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push`. The hook runs the Maven build and refreshes **`export/ArchiGPT.archiplugin`**; if the export changed, it commits it before pushing. Skip the hook once with `git push --no-verify`.
+**Promote stable:** copy a known-good latest build by hand (this is never overwritten by Maven or the pre-push hook):
+
+```bash
+cp export/latest/ArchiGPT.archiplugin export/stable/ArchiGPT.archiplugin
+```
+
+**Tagged GitHub release:** after you are happy with latest (and optionally after promoting stable), attach that zip to the tag. Releases stay on GitHub, not in a third folder in this repo.
+
+**Auto-build on push:** To have the plugin built and **`export/latest/`** updated every time you run `git push`, install the pre-push hook: `cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push`. The hook runs the Maven build and refreshes **`export/latest/ArchiGPT.archiplugin`**; if that file changed, it commits it before pushing. Skip the hook once with `git push --no-verify`.
 
 ### If you only have an Archi installation (no source)
 

@@ -22,6 +22,15 @@ public class ChunkAnalysisPromptTest {
     }
 
     @Test
+    public void buildChunkUserMessage_placesSelectionBeforeRequest() {
+        String msg = ChunkAnalysisPrompt.buildChunkUserMessage("digest", "scope", "<x/>", 1, 2,
+                "Current selection in the model:\n- Element BusinessActor \"Customer\" (id=abc)\n", "Review", null);
+        int sel = msg.indexOf("Element BusinessActor \"Customer\"");
+        int req = msg.indexOf("User request: Review");
+        assertTrue(sel >= 0 && req > sel);
+    }
+
+    @Test
     public void buildChunkUserMessage_includesSkillInstructions() {
         String msg = ChunkAnalysisPrompt.buildChunkUserMessage("digest", "scope", "<x/>", 1, 2, "", "Review",
                 "Cite element ids.");

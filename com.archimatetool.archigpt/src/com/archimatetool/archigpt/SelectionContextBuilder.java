@@ -5,13 +5,19 @@
 package com.archimatetool.archigpt;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
+import org.eclipse.core.runtime.IAdaptable;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.StructuredSelection;
 import org.eclipse.ui.ISelectionService;
 
 import com.archimatetool.model.IArchimateConcept;
 import com.archimatetool.model.IArchimateDiagramModel;
 import com.archimatetool.model.IArchimateElement;
+import com.archimatetool.model.IArchimateModelObject;
 import com.archimatetool.model.IArchimateRelationship;
 import com.archimatetool.model.IFolder;
 import com.archimatetool.model.IDiagramModel;
@@ -23,6 +29,9 @@ import com.archimatetool.model.IDiagramModelConnection;
  */
 @SuppressWarnings("nls")
 public final class SelectionContextBuilder {
+
+    private static final String SELECTION_HEADER = "Current selection in the model"
+            + " (if the user asks about these / the selected items, use ONLY this list):\n";
 
     private SelectionContextBuilder() {}
 
@@ -42,37 +51,123 @@ public final class SelectionContextBuilder {
     public static String buildFromStructuredSelection(Object selection) {
         if (selection == null) return "";
         if (!(selection instanceof IStructuredSelection)) return "";
-        IStructuredSelection structured = (IStructuredSelection) selection;
-        if (structured.isEmpty()) return "";
+        IStructuredSelection structured = unwrapStructuredSelection((IStructuredSelection) selection);
+        if (structured == null || structured.isEmpty()) return "";
         StringBuilder sb = new StringBuilder();
-        sb.append("Current selection in the model:\n");
+        sb.append(SELECTION_HEADER);
         @SuppressWarnings("unchecked")
-        java.util.Iterator<Object> it = structured.iterator();
+        Iterator<Object> it = structured.iterator();
+        int lines = 0;
         while (it.hasNext()) {
             Object obj = it.next();
             if (obj == null) continue;
             String line = describeSelectedObject(obj);
             if (line != null && !line.isEmpty()) {
                 sb.append("- ").append(line).append("\n");
+                lines++;
             }
         }
-        if (sb.length() <= "Current selection in the model:\n".length()) return "";
+        if (lines == 0) return "";
         return sb.toString();
     }
 
     /**
      * Return true if the selection looks like model content (folder, element, relationship, or view).
+     * Diagram canvas selections are GEF EditParts; those are unwrapped to ArchiMate objects first.
      */
     public static boolean isModelSelection(Object selection) {
         if (selection == null || !(selection instanceof IStructuredSelection)) return false;
-        IStructuredSelection structured = (IStructuredSelection) selection;
-        if (structured.isEmpty()) return false;
-        Object first = structured.getFirstElement();
-        return first instanceof IArchimateConcept || first instanceof IFolder || first instanceof IArchimateDiagramModel
-                || first instanceof IDiagramModelArchimateObject || first instanceof IDiagramModelConnection;
+        IStructuredSelection structured = unwrapStructuredSelection((IStructuredSelection) selection);
+        if (structured == null || structured.isEmpty()) return false;
+        return isDirectModelObject(structured.getFirstElement());
+    }
+
+    /**
+     * Map GEF EditParts / IAdaptable wrappers to ArchiMate model objects so callers can use instanceof.
+     */
+    public static IStructuredSelection unwrapStructuredSelection(IStructuredSelection selection) {
+        if (selection == null || selection.isEmpty()) {
+            return selection;
+        }
+        List<Object> unwrapped = new ArrayList<Object>();
+        @SuppressWarnings("unchecked")
+        Iterator<Object> it = selection.iterator();
+        while (it.hasNext()) {
+            Object u = toModelObject(it.next());
+            if (u != null && isDirectModelObject(u) && !unwrapped.contains(u)) {
+                unwrapped.add(u);
+            }
+        }
+        if (unwrapped.isEmpty()) {
+            return selection;
+        }
+        return new StructuredSelection(unwrapped);
+    }
+
+    /**
+     * Unwrap a diagram EditPart (or other IAdaptable) to the ArchiMate object it represents.
+     */
+    public static Object toModelObject(Object obj) {
+        if (obj == null) {
+            return null;
+        }
+        if (isDirectModelObject(obj)) {
+            return obj;
+        }
+        Object fromAdapter = adaptToModelObject(obj);
+        if (fromAdapter != null) {
+            return fromAdapter;
+        }
+        Object fromGetModel = invokeNoArg(obj, "getModel");
+        if (fromGetModel != null && fromGetModel != obj) {
+            if (isDirectModelObject(fromGetModel)) {
+                return fromGetModel;
+            }
+            Object nested = adaptToModelObject(fromGetModel);
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return obj;
+    }
+
+    static boolean isDirectModelObject(Object obj) {
+        return obj instanceof IArchimateConcept
+                || obj instanceof IFolder
+                || obj instanceof IArchimateDiagramModel
+                || obj instanceof IDiagramModelArchimateObject
+                || obj instanceof IDiagramModelConnection
+                || obj instanceof IDiagramModel
+                || obj instanceof IArchimateModelObject;
+    }
+
+    private static Object adaptToModelObject(Object obj) {
+        if (!(obj instanceof IAdaptable)) {
+            return null;
+        }
+        IAdaptable adaptable = (IAdaptable) obj;
+        Object[] tried = new Object[] {
+                adaptable.getAdapter(IDiagramModelArchimateObject.class),
+                adaptable.getAdapter(IDiagramModelConnection.class),
+                adaptable.getAdapter(IArchimateConcept.class),
+                adaptable.getAdapter(IArchimateDiagramModel.class),
+                adaptable.getAdapter(IFolder.class),
+                adaptable.getAdapter(IDiagramModel.class),
+                adaptable.getAdapter(IArchimateModelObject.class)
+        };
+        for (int i = 0; i < tried.length; i++) {
+            if (isDirectModelObject(tried[i])) {
+                return tried[i];
+            }
+        }
+        return null;
     }
 
     private static String describeSelectedObject(Object obj) {
+        obj = toModelObject(obj);
+        if (obj == null) {
+            return "";
+        }
         // Selection on diagram canvas: figure (element on diagram) or connection (relationship on diagram)
         if (obj instanceof IDiagramModelArchimateObject) {
             IDiagramModelArchimateObject dmo = (IDiagramModelArchimateObject) obj;
@@ -103,8 +198,8 @@ public final class SelectionContextBuilder {
             String type = concept.eClass().getName();
             String name = nullToEmpty(concept.getName());
             String id = concept.getId() != null ? concept.getId() : "";
-            if (concept instanceof com.archimatetool.model.IArchimateRelationship) {
-                com.archimatetool.model.IArchimateRelationship rel = (com.archimatetool.model.IArchimateRelationship) concept;
+            if (concept instanceof IArchimateRelationship) {
+                IArchimateRelationship rel = (IArchimateRelationship) concept;
                 String src = rel.getSource() != null ? nullToEmpty(rel.getSource().getName()) : "?";
                 String tgt = rel.getTarget() != null ? nullToEmpty(rel.getTarget().getName()) : "?";
                 return String.format("Relationship %s \"%s\" (id=%s) from \"%s\" to \"%s\"", type, name, id, src, tgt);
@@ -145,30 +240,31 @@ public final class SelectionContextBuilder {
     }
 
     private static String tryGetName(Object obj) {
+        Object v = invokeNoArg(obj, "getName");
+        return v == null ? "" : v.toString();
+    }
+
+    private static Object invokeNoArg(Object obj, String methodName) {
+        if (obj == null || methodName == null) {
+            return null;
+        }
         try {
-            Method m = obj.getClass().getMethod("getName");
-            Object v = m.invoke(obj);
-            return v == null ? "" : v.toString();
+            Method m = obj.getClass().getMethod(methodName);
+            return m.invoke(obj);
         } catch (Exception e) {
-            return "";
+            return null;
         }
     }
 
     private static IArchimateRelationship getConnectionRelationship(IDiagramModelConnection conn) {
         if (conn == null) return null;
-        try {
-            Method m = conn.getClass().getMethod("getArchimateRelationship");
-            Object rel = m.invoke(conn);
-            if (rel instanceof IArchimateRelationship) return (IArchimateRelationship) rel;
-        } catch (Exception e1) {
-            // continue
+        Object rel = invokeNoArg(conn, "getArchimateRelationship");
+        if (rel instanceof IArchimateRelationship) {
+            return (IArchimateRelationship) rel;
         }
-        try {
-            Method m = conn.getClass().getMethod("getRelationship");
-            Object rel = m.invoke(conn);
-            if (rel instanceof IArchimateRelationship) return (IArchimateRelationship) rel;
-        } catch (Exception e2) {
-            // continue
+        rel = invokeNoArg(conn, "getRelationship");
+        if (rel instanceof IArchimateRelationship) {
+            return (IArchimateRelationship) rel;
         }
         return null;
     }

@@ -45,11 +45,15 @@ public final class ChunkAnalysisPrompt {
         }
         sb.append("\nArchiMate model (Open Exchange XML):\n\n").append(xmlExcerpt != null ? xmlExcerpt : "")
                 .append("\n\n--- END OF MODEL EXCERPT ---\n\n");
-        sb.append("User request: ").append(prompt != null ? prompt : "").append("\n\n");
-        UserMessageBuilder.appendSkill(sb, skillBody);
         if (selectionContext != null && !selectionContext.isEmpty()) {
             sb.append(selectionContext);
+            if (!selectionContext.endsWith("\n")) {
+                sb.append('\n');
+            }
+            sb.append('\n');
         }
+        sb.append("User request: ").append(prompt != null ? prompt : "").append("\n\n");
+        UserMessageBuilder.appendSkill(sb, skillBody);
         return sb.toString();
     }
 }

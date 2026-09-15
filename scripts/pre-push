@@ -1,7 +1,8 @@
 #!/bin/sh
-# Pre-push hook: build ArchiGPT plugin and update export build/ArchiGPT.archiplugin before pushing.
+# Pre-push hook: build ArchiGPT plugin and update export/latest/ArchiGPT.archiplugin before pushing.
 # Install: cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
 # Uses scripts/mvn-with-archi.sh (sibling ../archi product p2). Override: ARCHI_REPO_PATH=/path/to/repository
+# Does not touch export/stable/ — promote that copy by hand when a build is known-good.
 
 set -e
 ROOT="$(git rev-parse --show-toplevel)"
@@ -14,9 +15,9 @@ if ! "$ROOT/scripts/mvn-with-archi.sh" clean package -pl com.archimatetool.archi
 fi
 
 JAR="$ROOT/com.archimatetool.archigpt/target/com.archimatetool.archigpt-1.0.0-SNAPSHOT.jar"
-OUT="$ROOT/export build/ArchiGPT.archiplugin"
+OUT="$ROOT/export/latest/ArchiGPT.archiplugin"
 if [ -f "$JAR" ]; then
-  mkdir -p "$ROOT/export build"
+  mkdir -p "$ROOT/export/latest"
   python3 - "$OUT" "$JAR" << 'PY'
 import zipfile, os, sys
 out_path, jar_path = sys.argv[1], sys.argv[2]
@@ -26,10 +27,10 @@ with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as z:
 PY
 fi
 
-if [ -n "$(git status -s "export build/ArchiGPT.archiplugin" 2>/dev/null)" ]; then
-  git add "export build/ArchiGPT.archiplugin"
-  git commit -m "Build: update export build/ArchiGPT.archiplugin"
-  echo "Pre-push: committed updated export."
+if [ -n "$(git status -s "export/latest/ArchiGPT.archiplugin" 2>/dev/null)" ]; then
+  git add "export/latest/ArchiGPT.archiplugin"
+  git commit -m "Build: update export/latest/ArchiGPT.archiplugin"
+  echo "Pre-push: committed updated latest export."
 fi
 
 exit 0

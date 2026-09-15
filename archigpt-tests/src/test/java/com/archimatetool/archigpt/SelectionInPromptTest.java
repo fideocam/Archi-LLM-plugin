@@ -77,6 +77,9 @@ public class SelectionInPromptTest {
         assertTrue("User request must appear in message", requestPos >= 0);
         assertTrue("Model must appear before end delimiter", modelLabel < endOfModel);
         assertTrue("User request must appear after end-of-model", requestPos > endOfModel);
+        int selPos = userMessage.indexOf("Folder \"Technology\"");
+        assertTrue("Selection must appear after end-of-model and before user request",
+                selPos > endOfModel && selPos < requestPos);
     }
 
     @Test
@@ -86,7 +89,7 @@ public class SelectionInPromptTest {
         int requestPos = userMessage.indexOf("User request: Assess maturity");
         int skillPos = userMessage.indexOf(PromptLibrary.TOOL_INSTRUCTIONS_START);
         int selPos = userMessage.indexOf("Folder \"Business\"");
-        assertTrue(requestPos >= 0 && skillPos > requestPos);
-        assertTrue(selPos > skillPos);
+        assertTrue(requestPos >= 0 && selPos >= 0 && selPos < requestPos);
+        assertTrue(skillPos > requestPos);
     }
 }

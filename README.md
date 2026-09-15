@@ -7,7 +7,7 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
 ## Installing the plugin
 
 1. **Get the plugin**  
-   Download `ArchiGPT.archiplugin` from the **`export build/`** folder (Maven output) or from **`export/`** at the repo root when it has been refreshed to match (or from releases, if available). On **`main`**, this artifact is the **local Ollama** build only; optional **cloud** provider support lives on branch **`feature/external-llm`** and is not part of `main`.
+   Prefer a tagged [GitHub Release](https://github.com/fideocam/Archi-LLM-plugin/releases) (`ArchiGPT.archiplugin` attached to the tag). From this repo: **`export/stable/`** is the last known-good copy (updated by hand); **`export/latest/`** is the current Maven build. On **`main`**, these artifacts are the **local Ollama** build only; optional **cloud** provider support lives on branch **`feature/external-llm`** and is not part of `main`.
 
 2. **Close Archi**  
    Quit Archi completely before installing.
@@ -25,7 +25,7 @@ Plugin to connect [Archi](https://www.archimatetool.com/) (ArchiMate modeling) w
 
 ## Branches
 
-- **`main`** — Default branch: **Ollama (local LLM)** only, plus the packaged **`ArchiGPT.archiplugin`** for that build.
+- **`main`** — Default branch: **Ollama (local LLM)** only, plus **`export/latest/`** (current build) and **`export/stable/`** (last promoted copy).
 - **`feature/external-llm`** — Work-in-progress **external APIs** (OpenAI, Anthropic, Gemini, Azure, etc.). Merge to `main` only when you want cloud support in the default release.
 
 ---

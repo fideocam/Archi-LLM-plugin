@@ -38,11 +38,15 @@ public final class UserMessageBuilder {
             sb.append("ArchiMate model (Open Exchange XML):\n\n").append(modelXml).append("\n\n");
         }
         sb.append("--- END OF MODEL ---\n\n");
-        sb.append("User request: ").append(prompt != null ? prompt : "").append("\n\n");
-        appendSkill(sb, skillBody);
         if (selectionContext != null && !selectionContext.isEmpty()) {
             sb.append(selectionContext);
+            if (!selectionContext.endsWith("\n")) {
+                sb.append('\n');
+            }
+            sb.append('\n');
         }
+        sb.append("User request: ").append(prompt != null ? prompt : "").append("\n\n");
+        appendSkill(sb, skillBody);
         return sb.toString();
     }
 
