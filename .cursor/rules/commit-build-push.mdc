@@ -1,0 +1,8 @@
+---
+description: Commit and push always include a Maven plugin build
+alwaysApply: true
+---
+
+# Commit and push with build
+
+When the user asks to commit, push, or both, also run `scripts/mvn-with-archi.sh clean package` (do not skip tests unless they ask). After a successful build, if `export/latest/ArchiGPT.archiplugin` changed, commit that zip too, then push. Do not create a GitHub release unless they ask.

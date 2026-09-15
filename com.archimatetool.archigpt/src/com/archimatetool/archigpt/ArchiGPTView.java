@@ -220,7 +220,7 @@ public class ArchiGPTView extends ViewPart {
         GridData toolsIntroData = new GridData(SWT.FILL, SWT.TOP, true, false);
         toolsIntroData.widthHint = 400;
         toolsIntro.setLayoutData(toolsIntroData);
-        toolsIntro.setText("Choose a validation, pattern, or analysis tool. That fills the prompt on the ArchiGPT tab; you can edit it there before asking.");
+        toolsIntro.setText("Choose a tidy, view, pattern, or EA tool. That fills the prompt on the ArchiGPT tab; you can edit it there before asking.");
 
         Composite toolsRow = new Composite(toolsComposite, SWT.NONE);
         toolsRow.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
@@ -1162,10 +1162,10 @@ public class ArchiGPTView extends ViewPart {
         }
         promptLibraryCombo.select(0);
         if (entries.isEmpty()) {
-            promptLibraryCombo.setToolTipText("Ready-made validation and pattern prompts were not found in the plugin.");
+            promptLibraryCombo.setToolTipText("Ready-made tidy, view, pattern, and EA prompts were not found in the plugin.");
         } else {
             promptLibraryCombo.setToolTipText(
-                    "Optional validation, pattern, or analysis tool. Choosing one fills the prompt; you can still edit it. Tool instructions are sent with the request.");
+                    "Optional tidy, view, pattern, or EA tool. Choosing one fills the prompt; you can still edit it. Tool instructions are sent with the request.");
         }
     }
 

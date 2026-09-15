@@ -1,5 +1,5 @@
 /**
- * Bundled validation, pattern, and analysis prompts (skill files under {@code skills/}).
+ * Bundled tidy, view, pattern, and EA prompts (skill files under {@code skills/}).
  */
 package com.archimatetool.archigpt;
 
@@ -41,9 +41,10 @@ public final class PromptLibrary {
     private static volatile List<Entry> cached;
 
     public enum Group {
-        VALIDATE("Validate"),
+        TIDY("Tidy"),
+        VIEW("View"),
         PATTERN("Pattern"),
-        ANALYSE("Analyse");
+        EA("EA");
 
         private final String label;
 
@@ -57,16 +58,19 @@ public final class PromptLibrary {
 
         static Group fromFrontMatter(String raw) {
             if (raw == null) {
-                return ANALYSE;
+                return EA;
             }
             String v = raw.trim().toLowerCase(Locale.ROOT);
-            if ("validate".equals(v)) {
-                return VALIDATE;
+            if ("tidy".equals(v) || "validate".equals(v)) {
+                return TIDY;
+            }
+            if ("view".equals(v)) {
+                return VIEW;
             }
             if ("pattern".equals(v)) {
                 return PATTERN;
             }
-            return ANALYSE;
+            return EA;
         }
     }
 
