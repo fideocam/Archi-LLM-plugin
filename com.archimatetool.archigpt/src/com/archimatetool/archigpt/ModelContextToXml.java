@@ -16,8 +16,12 @@ import com.archimatetool.model.IArchimateDiagramModel;
 import com.archimatetool.model.IArchimateElement;
 import com.archimatetool.model.IArchimateModel;
 import com.archimatetool.model.IArchimateRelationship;
+import com.archimatetool.model.IConnectable;
 import com.archimatetool.model.IDiagramModel;
+import com.archimatetool.model.IDiagramModelArchimateConnection;
 import com.archimatetool.model.IDiagramModelArchimateObject;
+import com.archimatetool.model.IDiagramModelConnection;
+import com.archimatetool.model.IDiagramModelContainer;
 import com.archimatetool.model.IFolder;
 import com.archimatetool.model.FolderType;
 
@@ -250,6 +254,35 @@ public final class ModelContextToXml {
     }
 
     /**
+     * Element and relationship ids that appear on at least one view (including nested groups).
+     * Connections are taken from {@code getSourceConnections()} on figures, not from {@code getChildren()}.
+     */
+    public static final class DiagramUsage {
+        public final Set<String> elementIds = new LinkedHashSet<String>();
+        public final Set<String> relationshipIds = new LinkedHashSet<String>();
+    }
+
+    public static DiagramUsage collectDiagramUsage(IArchimateModel model) {
+        DiagramUsage usage = new DiagramUsage();
+        if (model == null) {
+            return usage;
+        }
+        List<IArchimateDiagramModel> all = collectAllDiagramModels(model);
+        for (int i = 0; i < all.size(); i++) {
+            collectDiagramUsage(all.get(i), usage);
+        }
+        return usage;
+    }
+
+    static void collectDiagramUsage(IArchimateDiagramModel diagram, DiagramUsage usage) {
+        if (diagram == null || usage == null) {
+            return;
+        }
+        Set<IDiagramModelConnection> seen = new LinkedHashSet<IDiagramModelConnection>();
+        walkContainer(diagram, usage, seen);
+    }
+
+    /**
      * Find all diagrams in the model that contain the given concept (element or relationship).
      * Used to put the selected element's view(s) first in the XML sent to the LLM.
      */
@@ -258,15 +291,11 @@ public final class ModelContextToXml {
         List<IArchimateDiagramModel> out = new ArrayList<>();
         List<IArchimateDiagramModel> all = collectAllDiagramModels(model);
         for (IArchimateDiagramModel dm : all) {
-            if (dm.getChildren() == null) continue;
-            for (Object child : dm.getChildren()) {
-                if (child instanceof IDiagramModelArchimateObject) {
-                    Object el = ((IDiagramModelArchimateObject) child).getArchimateElement();
-                    if (concept.equals(el)) {
-                        out.add(dm);
-                        break;
-                    }
-                }
+            DiagramUsage usage = new DiagramUsage();
+            collectDiagramUsage(dm, usage);
+            String id = concept.getId();
+            if (id != null && (usage.elementIds.contains(id) || usage.relationshipIds.contains(id))) {
+                out.add(dm);
             }
         }
         return out;
@@ -326,11 +355,25 @@ public final class ModelContextToXml {
         sb.append(pad).append("</viewsAndDiagrams>\n");
     }
 
-    /** Serialize diagram content: nodes (element refs, bounds) and connections (source, target, relationship). */
+    /** Serialize diagram content: nested nodes and connections from figure {@code getSourceConnections()}. */
     private static void appendDiagramContent(StringBuilder sb, IArchimateDiagramModel diagram, int indent) {
-        if (diagram == null || diagram.getChildren() == null) return;
+        if (diagram == null) {
+            return;
+        }
         String pad = repeat("  ", indent);
-        for (Object child : diagram.getChildren()) {
+        Set<IDiagramModelConnection> seen = new LinkedHashSet<IDiagramModelConnection>();
+        appendContainerContent(sb, diagram, pad, seen);
+    }
+
+    private static void appendContainerContent(StringBuilder sb, IDiagramModelContainer container, String pad,
+            Set<IDiagramModelConnection> seen) {
+        if (container == null || container.getChildren() == null) {
+            return;
+        }
+        for (Object child : container.getChildren()) {
+            if (child instanceof IConnectable) {
+                appendSourceConnections(sb, (IConnectable) child, pad, seen);
+            }
             if (child instanceof IDiagramModelArchimateObject) {
                 IDiagramModelArchimateObject dmo = (IDiagramModelArchimateObject) child;
                 IArchimateElement el = dmo.getArchimateElement();
@@ -348,15 +391,69 @@ public final class ModelContextToXml {
                 } catch (Exception ignored) {
                 }
                 sb.append(pad).append("<node elementRef=\"").append(escape(elId)).append("\" name=\"").append(escape(elName))
-                  .append("\" x=\"").append(x).append("\" y=\"").append(y).append("\" width=\"").append(w).append("\" height=\"").append(h).append("\"/>\n");
-            } else if (child instanceof com.archimatetool.model.IDiagramModelConnection) {
-                com.archimatetool.model.IDiagramModelConnection conn = (com.archimatetool.model.IDiagramModelConnection) child;
-                String srcId = conn.getSource() != null ? getDiagramObjectId(conn.getSource()) : "";
-                String tgtId = conn.getTarget() != null ? getDiagramObjectId(conn.getTarget()) : "";
-                String relId = getConnectionRelationshipId(conn);
-                sb.append(pad).append("<connection source=\"").append(escape(srcId)).append("\" target=\"").append(escape(tgtId))
-                  .append("\" relationshipRef=\"").append(escape(relId)).append("\"/>\n");
+                  .append("\" x=\"").append(x).append("\" y=\"").append(y).append("\" width=\"").append(w)
+                  .append("\" height=\"").append(h).append("\"/>\n");
+                appendContainerContent(sb, dmo, pad, seen);
+            } else if (child instanceof IDiagramModelContainer) {
+                appendContainerContent(sb, (IDiagramModelContainer) child, pad, seen);
             }
+        }
+    }
+
+    private static void appendSourceConnections(StringBuilder sb, IConnectable connectable, String pad,
+            Set<IDiagramModelConnection> seen) {
+        if (connectable == null || connectable.getSourceConnections() == null) {
+            return;
+        }
+        for (IDiagramModelConnection conn : connectable.getSourceConnections()) {
+            if (conn == null || !seen.add(conn)) {
+                continue;
+            }
+            String srcId = conn.getSource() != null ? getDiagramObjectId(conn.getSource()) : "";
+            String tgtId = conn.getTarget() != null ? getDiagramObjectId(conn.getTarget()) : "";
+            String relId = getConnectionRelationshipId(conn);
+            sb.append(pad).append("<connection source=\"").append(escape(srcId)).append("\" target=\"").append(escape(tgtId))
+              .append("\" relationshipRef=\"").append(escape(relId)).append("\"/>\n");
+            appendSourceConnections(sb, conn, pad, seen);
+        }
+    }
+
+    private static void walkContainer(IDiagramModelContainer container, DiagramUsage usage,
+            Set<IDiagramModelConnection> seen) {
+        if (container == null || container.getChildren() == null || usage == null) {
+            return;
+        }
+        for (Object child : container.getChildren()) {
+            if (child instanceof IConnectable) {
+                collectSourceConnections((IConnectable) child, usage, seen);
+            }
+            if (child instanceof IDiagramModelArchimateObject) {
+                IDiagramModelArchimateObject dmo = (IDiagramModelArchimateObject) child;
+                IArchimateElement el = dmo.getArchimateElement();
+                if (el != null && el.getId() != null && !el.getId().isEmpty()) {
+                    usage.elementIds.add(el.getId());
+                }
+                walkContainer(dmo, usage, seen);
+            } else if (child instanceof IDiagramModelContainer) {
+                walkContainer((IDiagramModelContainer) child, usage, seen);
+            }
+        }
+    }
+
+    private static void collectSourceConnections(IConnectable connectable, DiagramUsage usage,
+            Set<IDiagramModelConnection> seen) {
+        if (connectable == null || connectable.getSourceConnections() == null) {
+            return;
+        }
+        for (IDiagramModelConnection conn : connectable.getSourceConnections()) {
+            if (conn == null || !seen.add(conn)) {
+                continue;
+            }
+            String relId = getConnectionRelationshipId(conn);
+            if (relId != null && !relId.isEmpty()) {
+                usage.relationshipIds.add(relId);
+            }
+            collectSourceConnections(conn, usage, seen);
         }
     }
 
@@ -368,8 +465,13 @@ public final class ModelContextToXml {
         return "";
     }
 
-    /** Get relationship id from a diagram connection (API may be getArchimateRelationship or getRelationship). */
-    private static String getConnectionRelationshipId(com.archimatetool.model.IDiagramModelConnection conn) {
+    private static String getConnectionRelationshipId(IDiagramModelConnection conn) {
+        if (conn instanceof IDiagramModelArchimateConnection) {
+            IArchimateRelationship rel = ((IDiagramModelArchimateConnection) conn).getArchimateRelationship();
+            if (rel != null && rel.getId() != null) {
+                return rel.getId();
+            }
+        }
         try {
             java.lang.reflect.Method m = conn.getClass().getMethod("getArchimateRelationship");
             Object rel = m.invoke(conn);
@@ -378,18 +480,7 @@ public final class ModelContextToXml {
                 Object id = getId.invoke(rel);
                 return id != null ? id.toString() : "";
             }
-        } catch (Exception e1) {
-            try {
-                java.lang.reflect.Method m = conn.getClass().getMethod("getRelationship");
-                Object rel = m.invoke(conn);
-                if (rel != null) {
-                    java.lang.reflect.Method getId = rel.getClass().getMethod("getId");
-                    Object id = getId.invoke(rel);
-                    return id != null ? id.toString() : "";
-                }
-            } catch (Exception e2) {
-                // ignore
-            }
+        } catch (Exception ignored) {
         }
         return "";
     }

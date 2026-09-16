@@ -10,15 +10,15 @@ Reply with ANALYSIS (plain text) only. Do not output CHANGES JSON. Do not add or
 
 Question: which catalog relationships are unused on diagrams?
 
-A relationship is on a view if some `<connection>` has `relationshipRef` equal to that relationship’s `id`. List relationships with no such connection on any view in `<viewsAndDiagrams>`.
+ArchiGPT may include a PLUGIN FINDINGS section computed from the live model (including connections stored on figures, not only in XML). Trust that list. Do not re-derive unused relationships from truncated or chunked XML.
 
-For each: relationship type, name (if any), id, source type+name+id, target type+name+id.
+If PLUGIN FINDINGS are absent: a relationship is on a view if some `<connection>` has `relationshipRef` equal to that relationship’s `id`. If `<viewsAndDiagrams>` is missing or truncated, say you cannot complete this check.
 
-If `<viewsAndDiagrams>` is missing or truncated, say you cannot complete this check. Nested figures inside groups may be omitted from the XML; mention that limit if you suspect it.
+For each unused relationship: type, name (if any), id, source type+name+id, target type+name+id.
 
 Do not suggest new views, new relationships, or enterprise improvements. This is a catalog-versus-canvas inventory only.
 
 Report format:
-1. Count
-2. List (type, id, source, target)
-3. Relationships that do appear on at least one view (optional short note, not a full dump)
+1. Count (use PLUGIN FINDINGS when present)
+2. List
+3. Short note only — do not dump relationships that *are* on a view

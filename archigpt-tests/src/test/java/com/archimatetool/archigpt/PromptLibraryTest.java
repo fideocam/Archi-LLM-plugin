@@ -31,6 +31,11 @@ public class PromptLibraryTest {
             assertFalse(e.prompt.trim().isEmpty());
             assertFalse(e.skillBody.trim().isEmpty());
             assertTrue(e.comboLabel().startsWith(e.group.label() + ": "));
+            if (e.group == PromptLibrary.Group.EA) {
+                assertEquals(e.title, e.titleInCategory());
+            } else {
+                assertEquals(e.comboLabel(), e.titleInCategory());
+            }
             if (e.group == PromptLibrary.Group.TIDY) {
                 tidy++;
             } else if (e.group == PromptLibrary.Group.VIEW) {
@@ -46,6 +51,16 @@ public class PromptLibraryTest {
         assertEquals(3, view);
         assertEquals(9, pattern);
         assertEquals(9, ea);
+        List<PromptLibrary.Entry> solution = PromptLibrary.solutionArchitectEntries();
+        List<PromptLibrary.Entry> eaOnly = PromptLibrary.entriesIn(PromptLibrary.Group.EA);
+        assertEquals(tidy + view + pattern, solution.size());
+        assertEquals(ea, eaOnly.size());
+        for (PromptLibrary.Entry e : solution) {
+            assertFalse(e.id, e.group == PromptLibrary.Group.EA);
+        }
+        for (PromptLibrary.Entry e : eaOnly) {
+            assertEquals(e.id, PromptLibrary.Group.EA, e.group);
+        }
     }
 
     @Test
@@ -93,6 +108,7 @@ public class PromptLibraryTest {
         PromptLibrary.Entry rels = PromptLibrary.findById("tidy-relationships-not-on-views");
         assertNotNull(rels);
         assertTrue(rels.skillBody.contains("relationshipRef"));
+        assertTrue(rels.skillBody.contains("PLUGIN FINDINGS"));
 
         PromptLibrary.Entry service = PromptLibrary.findById("view-business-service");
         assertNotNull(service);

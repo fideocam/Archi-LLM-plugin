@@ -30,6 +30,9 @@ public final class PromptLibrary {
 
     public static final String NONE_LABEL = "(none) — type your own prompt";
 
+    /** First item in each Tools-tab category combo. */
+    public static final String NONE_IN_CATEGORY = "(none)";
+
     /** Cap on injected skill body so one tool cannot dominate the context window. */
     public static final int MAX_SKILL_CHARS = 8_000;
 
@@ -97,6 +100,14 @@ public final class PromptLibrary {
         public String comboLabel() {
             return group.label() + ": " + title;
         }
+
+        /** Label inside a category combo that already names the group. */
+        public String titleInCategory() {
+            if (group == Group.EA) {
+                return title;
+            }
+            return group.label() + ": " + title;
+        }
     }
 
     private PromptLibrary() {}
@@ -124,6 +135,28 @@ public final class PromptLibrary {
             }
         }
         return null;
+    }
+
+    /** Catalog entries in {@code group}, in catalog order. */
+    public static List<Entry> entriesIn(Group group) {
+        List<Entry> out = new ArrayList<Entry>();
+        for (Entry e : all()) {
+            if (e.group == group) {
+                out.add(e);
+            }
+        }
+        return out;
+    }
+
+    /** Tidy, View, and Pattern entries (solution-architect tools), in catalog order. */
+    public static List<Entry> solutionArchitectEntries() {
+        List<Entry> out = new ArrayList<Entry>();
+        for (Entry e : all()) {
+            if (e.group != Group.EA) {
+                out.add(e);
+            }
+        }
+        return out;
     }
 
     /**
