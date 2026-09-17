@@ -1,8 +1,9 @@
 ---
 id: pattern-migration-slice
 group: pattern
-title: Migration slice
-prompt: Add a Migration slice (baseline and target plateaus, gap, work package, and deliverable). Reuse existing elements when they match. Do not create a new view unless I ask for one.
+roles: ea
+title: Add a migration slice
+prompt: Add a migration slice (baseline and target plateaus, gap, work package, and deliverable). Reuse existing elements when they match. Do not create a new view unless I ask for one.
 mode: changes
 ---
 

@@ -1,8 +1,8 @@
 ---
 id: view-business-service
 group: view
-title: Business diagram for a service
-prompt: On this view, where some BusinessServices already have a serving path (application, process, or role), which peer services on the same view lack that path? Report only; do not propose a full EA model.
+title: Gaps on this service diagram
+prompt: On this view, where some Business Services already have a serving path (application, process, or role), which peer services on the same canvas lack that path? Stay on this slice; do not propose a full EA model. Report only.
 mode: analysis
 ---
 

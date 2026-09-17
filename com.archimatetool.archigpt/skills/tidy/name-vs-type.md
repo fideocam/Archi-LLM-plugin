@@ -1,7 +1,7 @@
 ---
 id: tidy-name-vs-type
 group: tidy
-title: Names that do not match type
+title: Names that do not match the ArchiMate type
 prompt: Find elements whose names look like a different ArchiMate layer or type than their actual type. Report only; do not change the model.
 mode: analysis
 ---

@@ -1,8 +1,8 @@
 ---
 id: pattern-application-contract
 group: pattern
-title: Application with contract
-prompt: Add an Application with contract fragment (component, interface, data object, and serving a business service). Reuse existing elements when they match. Do not create a new view unless I ask for one.
+title: Add an application with contract
+prompt: Add an application-with-contract fragment for this slice (component, interface, data object, serving a business service). Reuse existing elements when they match. Do not create a new view unless I ask for one.
 mode: changes
 ---
 

@@ -1,8 +1,9 @@
 ---
 id: pattern-motivation-chain
 group: pattern
-title: Motivation chain
-prompt: Add a Motivation chain (stakeholder, driver, goal, requirement, realized by a core element). Reuse existing elements when they match. Do not create a new view unless I ask for one.
+roles: ea
+title: Add a motivation chain
+prompt: Add a motivation chain (stakeholder, driver, goal, requirement, realized by a core element). Reuse existing elements when they match. Do not create a new view unless I ask for one.
 mode: changes
 ---
 

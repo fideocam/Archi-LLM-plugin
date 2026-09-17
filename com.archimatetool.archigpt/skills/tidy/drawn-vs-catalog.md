@@ -1,7 +1,7 @@
 ---
 id: tidy-drawn-vs-catalog
 group: tidy
-title: Drawn connections vs catalog
+title: Connections that do not match the catalog
 prompt: Find view connections with no matching model relationship, and model relationships between two elements that sit together on a view but are not drawn there. Report only; do not change the model.
 mode: analysis
 ---

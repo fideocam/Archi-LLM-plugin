@@ -1,7 +1,7 @@
 ---
 id: ea-uneven-alternatives
 group: ea
-title: Uneven alternatives
+title: Only one supporter where peers have more
 prompt: Where some processes or services already have more than one supporting application or node in the XML, which peers have only a single supporter? Report only; do not change the model.
 mode: analysis
 ---

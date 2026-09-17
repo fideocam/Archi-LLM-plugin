@@ -1,8 +1,8 @@
 ---
 id: view-this-diagram
 group: view
-title: This diagram vs catalog
-prompt: For the selected or primary view, list what is on the canvas, catalog relationships between those same elements that are not drawn, and connections that have no catalog relationship. Report only; do not change the model.
+title: This view versus the catalog
+prompt: For the selected or primary view, list what is on the canvas, catalog relationships between those same elements that are not drawn, and connections that have no catalog relationship. Stay on this canvas. Report only.
 mode: analysis
 ---
 

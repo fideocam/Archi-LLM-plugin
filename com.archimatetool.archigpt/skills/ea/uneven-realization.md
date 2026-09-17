@@ -1,7 +1,7 @@
 ---
 id: ea-uneven-realization
 group: ea
-title: Uneven realization
+title: Capabilities missing realization
 prompt: Where some capabilities or services on the same view or folder already have a Realization from a process, application, or resource, which peers have none? Report only; do not change the model.
 mode: analysis
 ---

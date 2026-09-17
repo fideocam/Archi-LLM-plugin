@@ -15,6 +15,13 @@ pattern/event-driven.md
 pattern/integration-slice.md
 pattern/motivation-chain.md
 pattern/migration-slice.md
+tech/redundancy.md
+tech/security-zones.md
+tech/continuity.md
+tech/serving-without-path.md
+tech/standard-runtime.md
+tech/shared-platform.md
+tech/hosting-stack.md
 ea/cross-view-gaps.md
 ea/uneven-service-stack.md
 ea/uneven-application-support.md

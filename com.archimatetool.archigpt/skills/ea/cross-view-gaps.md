@@ -1,7 +1,7 @@
 ---
 id: ea-cross-view-gaps
 group: ea
-title: Present in one view, missing in another
+title: Same story missing on another view
 prompt: Find elements or relationships that this model already shows on one view but omits on a different overlapping view that already contains part of the same story. Report only; do not change the model.
 mode: analysis
 ---

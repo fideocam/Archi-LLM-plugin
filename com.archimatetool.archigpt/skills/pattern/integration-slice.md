@@ -1,8 +1,8 @@
 ---
 id: pattern-integration-slice
 group: pattern
-title: Integration slice
-prompt: Add an Integration slice (two application components, interfaces, and a flow). Reuse existing elements when they match. Do not create a new view unless I ask for one.
+title: Add an integration between systems
+prompt: Add an integration slice (two application components, interfaces, and a flow). Reuse existing elements when they match. Do not create a new view unless I ask for one.
 mode: changes
 ---
 

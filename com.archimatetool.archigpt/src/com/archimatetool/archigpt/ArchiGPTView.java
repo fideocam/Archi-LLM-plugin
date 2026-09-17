@@ -84,7 +84,7 @@ public class ArchiGPTView extends ViewPart {
     private Text promptText;
     private Combo toolsRoleCombo;
     private Combo toolsTaskCombo;
-    private List<PromptLibrary.Entry> toolsTaskChoices = new ArrayList<PromptLibrary.Entry>();
+    private final ToolsCatalogSelection toolsCatalog = new ToolsCatalogSelection();
     private Text toolsPromptPreview;
     private Text toolsResponseText;
     private Text whatWasSentSummaryText;
@@ -1205,67 +1205,46 @@ public class ArchiGPTView extends ViewPart {
             return;
         }
         toolsRoleCombo.removeAll();
-        PromptLibrary.Role[] roles = PromptLibrary.Role.values();
-        for (int i = 0; i < roles.length; i++) {
-            toolsRoleCombo.add(roles[i].label());
+        String[] labels = ToolsCatalogSelection.roleLabels();
+        for (int i = 0; i < labels.length; i++) {
+            toolsRoleCombo.add(labels[i]);
         }
         toolsRoleCombo.select(0);
-        toolsRoleCombo.setToolTipText(roles[0].tooltip());
-    }
-
-    private PromptLibrary.Role selectedToolsRole() {
-        if (toolsRoleCombo == null || toolsRoleCombo.isDisposed()) {
-            return PromptLibrary.Role.SOLUTION_ARCHITECT;
-        }
-        int i = toolsRoleCombo.getSelectionIndex();
-        PromptLibrary.Role[] roles = PromptLibrary.Role.values();
-        if (i < 0 || i >= roles.length) {
-            return PromptLibrary.Role.SOLUTION_ARCHITECT;
-        }
-        return roles[i];
+        toolsCatalog.selectRole(0);
+        toolsRoleCombo.setToolTipText(toolsCatalog.role().tooltip());
     }
 
     private void populateToolsTaskCombo() {
-        toolsTaskChoices.clear();
         if (toolsTaskCombo == null || toolsTaskCombo.isDisposed()) {
             return;
         }
-        PromptLibrary.Role role = selectedToolsRole();
         toolsTaskCombo.removeAll();
-        toolsTaskCombo.add(PromptLibrary.NONE_TASK);
-        toolsTaskChoices.add(null);
-        List<PromptLibrary.Entry> entries = PromptLibrary.entriesForRole(role);
-        for (int i = 0; i < entries.size(); i++) {
-            PromptLibrary.Entry e = entries.get(i);
-            toolsTaskCombo.add(e.titleInCategory());
-            toolsTaskChoices.add(e);
+        List<String> labels = toolsCatalog.taskLabels();
+        for (int i = 0; i < labels.size(); i++) {
+            toolsTaskCombo.add(labels.get(i));
         }
-        toolsTaskCombo.select(0);
-        toolsTaskCombo.setToolTipText(role.tooltip());
+        toolsTaskCombo.select(toolsCatalog.taskIndex());
+        toolsTaskCombo.setToolTipText(toolsCatalog.role().tooltip());
         if (toolsRoleCombo != null && !toolsRoleCombo.isDisposed()) {
-            toolsRoleCombo.setToolTipText(role.tooltip());
+            toolsRoleCombo.setToolTipText(toolsCatalog.role().tooltip());
         }
     }
 
     private PromptLibrary.Entry selectedPromptLibraryEntry() {
-        if (toolsTaskCombo == null || toolsTaskCombo.isDisposed() || toolsTaskChoices == null) {
-            return null;
-        }
-        int i = toolsTaskCombo.getSelectionIndex();
-        if (i <= 0 || i >= toolsTaskChoices.size()) {
-            return null;
-        }
-        return toolsTaskChoices.get(i);
+        return toolsCatalog.selectedTask();
     }
 
     private void onToolsRoleSelected() {
+        int i = toolsRoleCombo != null && !toolsRoleCombo.isDisposed() ? toolsRoleCombo.getSelectionIndex() : 0;
+        toolsCatalog.selectRole(i);
         populateToolsTaskCombo();
-        setToolsPrompt("");
+        setToolsPrompt(toolsCatalog.chosenPrompt());
     }
 
     private void onToolsTaskSelected() {
-        PromptLibrary.Entry e = selectedPromptLibraryEntry();
-        setToolsPrompt(e != null ? e.prompt : "");
+        int i = toolsTaskCombo != null && !toolsTaskCombo.isDisposed() ? toolsTaskCombo.getSelectionIndex() : 0;
+        toolsCatalog.selectTask(i);
+        setToolsPrompt(toolsCatalog.chosenPrompt());
     }
 
     private void setToolsPrompt(String text) {
@@ -1419,7 +1398,8 @@ public class ArchiGPTView extends ViewPart {
             selectionContext = focusLine + (selectionContextBase != null && !selectionContextBase.isEmpty() ? selectionContextBase : "");
         }
         final String promptFinal = prompt;
-        final PromptLibrary.Entry selectedTool = fromTools ? selectedPromptLibraryEntry() : null;
+        final PromptLibrary.Entry selectedTool = ToolsCatalogSelection.toolForRequest(fromTools,
+                selectedPromptLibraryEntry());
         if (model != null) {
             String findings = CatalogHygiene.findingsFor(model, selectedTool, promptFinal);
             if (findings != null && !findings.isEmpty()) {

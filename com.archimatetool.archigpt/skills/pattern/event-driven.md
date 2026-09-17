@@ -1,8 +1,8 @@
 ---
 id: pattern-event-driven
 group: pattern
-title: Event-driven process
-prompt: Add an Event-driven process fragment (business event triggering a business process). Reuse existing elements when they match. Do not create a new view unless I ask for one.
+title: Add an event-driven process
+prompt: Add an event-driven process fragment (business event triggering a business process). Reuse existing elements when they match. Do not create a new view unless I ask for one.
 mode: changes
 ---
 

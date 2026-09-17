@@ -1,7 +1,7 @@
 ---
 id: ea-uneven-data
 group: ea
-title: Uneven data access
+title: Applications missing data access
 prompt: Where some applications or data objects on the same view or folder already have Access or Flow, which peers have none? Report only; do not change the model.
 mode: analysis
 ---

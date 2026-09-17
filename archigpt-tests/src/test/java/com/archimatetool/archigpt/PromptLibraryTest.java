@@ -12,7 +12,7 @@ import java.util.Set;
 import org.junit.Test;
 
 /**
- * Bundled tidy, view, pattern, and EA prompts load from {@code skills/} and keep ANALYSIS vs CHANGES distinct.
+ * Bundled tidy, view, pattern, technology, and EA prompts load from {@code skills/} and keep ANALYSIS vs CHANGES distinct.
  */
 @SuppressWarnings("nls")
 public class PromptLibraryTest {
@@ -20,9 +20,9 @@ public class PromptLibraryTest {
     @Test
     public void catalogLoadsExpectedGroupsAndUniqueIds() {
         List<PromptLibrary.Entry> all = PromptLibrary.all();
-        assertEquals("catalog.txt entries", 26, all.size());
+        assertEquals("catalog.txt entries", 33, all.size());
         Set<String> ids = new HashSet<String>();
-        int tidy = 0, view = 0, pattern = 0, ea = 0;
+        int tidy = 0, view = 0, pattern = 0, ea = 0, tech = 0;
         for (PromptLibrary.Entry e : all) {
             assertNotNull(e.id);
             assertTrue("duplicate id " + e.id, ids.add(e.id));
@@ -31,17 +31,17 @@ public class PromptLibraryTest {
             assertFalse(e.prompt.trim().isEmpty());
             assertFalse(e.skillBody.trim().isEmpty());
             assertTrue(e.comboLabel().startsWith(e.group.label() + ": "));
-            if (e.group == PromptLibrary.Group.EA) {
-                assertEquals(e.title, e.titleInCategory());
-            } else {
-                assertEquals(e.comboLabel(), e.titleInCategory());
-            }
+            assertEquals(e.title, e.titleInCategory());
+            assertFalse(e.roles.isEmpty());
+            assertTrue(e.id, e.forRole(e.roles.get(0)));
             if (e.group == PromptLibrary.Group.TIDY) {
                 tidy++;
             } else if (e.group == PromptLibrary.Group.VIEW) {
                 view++;
             } else if (e.group == PromptLibrary.Group.PATTERN) {
                 pattern++;
+            } else if (e.group == PromptLibrary.Group.TECHNOLOGY) {
+                tech++;
             } else {
                 assertEquals(e.id, PromptLibrary.Group.EA, e.group);
                 ea++;
@@ -50,20 +50,42 @@ public class PromptLibraryTest {
         assertEquals(5, tidy);
         assertEquals(3, view);
         assertEquals(9, pattern);
+        assertEquals(7, tech);
         assertEquals(9, ea);
         List<PromptLibrary.Entry> solution = PromptLibrary.entriesForRole(PromptLibrary.Role.SOLUTION_ARCHITECT);
-        List<PromptLibrary.Entry> eaOnly = PromptLibrary.entriesForRole(PromptLibrary.Role.EA);
-        assertEquals(tidy + view + pattern, solution.size());
-        assertEquals(ea, eaOnly.size());
+        List<PromptLibrary.Entry> technology = PromptLibrary.entriesForRole(PromptLibrary.Role.TECHNOLOGY_ARCHITECT);
+        List<PromptLibrary.Entry> eaRole = PromptLibrary.entriesForRole(PromptLibrary.Role.EA);
+        List<PromptLibrary.Entry> hygiene = PromptLibrary.entriesForRole(PromptLibrary.Role.HYGIENE);
+        assertEquals(9, solution.size());
+        assertEquals(7, technology.size());
+        assertEquals(12, eaRole.size());
+        assertEquals(5, hygiene.size());
         assertEquals(solution, PromptLibrary.solutionArchitectEntries());
-        assertEquals(PromptLibrary.entriesIn(PromptLibrary.Group.EA), eaOnly);
+        assertEquals(PromptLibrary.entriesIn(PromptLibrary.Group.EA).size() + 3, eaRole.size());
+        Set<String> roleIds = new HashSet<String>();
         for (PromptLibrary.Entry e : solution) {
-            assertEquals(e.id, PromptLibrary.Role.SOLUTION_ARCHITECT, PromptLibrary.Role.fromGroup(e.group));
+            assertTrue(e.id, e.forRole(PromptLibrary.Role.SOLUTION_ARCHITECT));
+            assertTrue(roleIds.add(e.id));
         }
-        for (PromptLibrary.Entry e : eaOnly) {
-            assertEquals(e.id, PromptLibrary.Role.EA, PromptLibrary.Role.fromGroup(e.group));
+        for (PromptLibrary.Entry e : technology) {
+            assertTrue(e.id, e.forRole(PromptLibrary.Role.TECHNOLOGY_ARCHITECT));
+            assertTrue(roleIds.add(e.id));
         }
-        assertEquals(2, PromptLibrary.Role.values().length);
+        for (PromptLibrary.Entry e : eaRole) {
+            assertTrue(e.id, e.forRole(PromptLibrary.Role.EA));
+            assertTrue(e.id, roleIds.add(e.id));
+        }
+        for (PromptLibrary.Entry e : hygiene) {
+            assertTrue(e.id, e.forRole(PromptLibrary.Role.HYGIENE));
+            assertTrue(e.id, roleIds.add(e.id));
+        }
+        assertEquals(all.size(), roleIds.size());
+        assertEquals(4, PromptLibrary.Role.values().length);
+        assertEquals("view-this-diagram", solution.get(0).id);
+        assertEquals("tech-redundancy", technology.get(0).id);
+        assertEquals("Gaps on this service diagram", PromptLibrary.findById("view-business-service").title);
+        assertTrue(PromptLibrary.findById("pattern-capability-map").forRole(PromptLibrary.Role.EA));
+        assertFalse(PromptLibrary.findById("pattern-capability-map").forRole(PromptLibrary.Role.SOLUTION_ARCHITECT));
     }
 
     @Test
@@ -143,6 +165,34 @@ public class PromptLibraryTest {
     }
 
     @Test
+    public void technologyArchitectSkillsStayEchoGapsNotChecklists() {
+        String[] techIds = {
+                "tech-redundancy", "tech-security-zones", "tech-continuity", "tech-serving-without-path",
+                "tech-standard-runtime", "tech-shared-platform", "tech-hosting-stack"
+        };
+        for (int i = 0; i < techIds.length; i++) {
+            PromptLibrary.Entry e = PromptLibrary.findById(techIds[i]);
+            assertNotNull(techIds[i], e);
+            assertEquals(techIds[i], PromptLibrary.Group.TECHNOLOGY, e.group);
+            assertTrue(techIds[i], e.forRole(PromptLibrary.Role.TECHNOLOGY_ARCHITECT));
+            assertTrue(techIds[i], e.analysisOnly);
+            assertTrue(techIds[i], AnalysisPromptIntent.likelyAnalysisOnly(e.prompt));
+            String body = e.skillBody.toLowerCase();
+            assertTrue(techIds[i], body.contains("stop"));
+            assertTrue(techIds[i], body.contains("do not"));
+            assertFalse(techIds[i], body.contains("iso 27001"));
+            assertFalse(techIds[i], body.contains("cis benchmark"));
+            assertFalse(techIds[i], body.contains("zero-trust architecture"));
+        }
+        PromptLibrary.Entry security = PromptLibrary.findById("tech-security-zones");
+        assertTrue(security.skillBody.contains("If no security control is modelled"));
+        PromptLibrary.Entry redundancy = PromptLibrary.findById("tech-redundancy");
+        assertTrue(redundancy.skillBody.contains("Do not score the file against an external high-availability checklist"));
+        PromptLibrary.Entry runtime = PromptLibrary.findById("tech-standard-runtime");
+        assertTrue(runtime.skillBody.contains("Do not recommend a vendor, version, cloud service"));
+    }
+
+    @Test
     public void parseMarkdown_readsFrontMatter() {
         String md = "---\n"
                 + "id: demo-tool\n"
@@ -161,6 +211,24 @@ public class PromptLibraryTest {
         assertTrue(e.analysisOnly);
         assertEquals("Body text.", e.skillBody);
         assertEquals("Tidy: Demo", e.comboLabel());
+        assertTrue(e.forRole(PromptLibrary.Role.HYGIENE));
+        assertFalse(e.forRole(PromptLibrary.Role.SOLUTION_ARCHITECT));
+    }
+
+    @Test
+    public void parseMarkdown_rolesOverrideGroupDefault() {
+        PromptLibrary.Entry e = PromptLibrary.parseMarkdown("pattern/cap.md", "---\n"
+                + "id: pattern-cap\n"
+                + "group: pattern\n"
+                + "roles: ea\n"
+                + "title: Add a capability map slice\n"
+                + "prompt: Add a capability-map slice.\n"
+                + "mode: changes\n"
+                + "---\n\nBody.\n");
+        assertEquals(PromptLibrary.Group.PATTERN, e.group);
+        assertTrue(e.forRole(PromptLibrary.Role.EA));
+        assertFalse(e.forRole(PromptLibrary.Role.SOLUTION_ARCHITECT));
+        assertFalse(e.analysisOnly);
     }
 
     @Test

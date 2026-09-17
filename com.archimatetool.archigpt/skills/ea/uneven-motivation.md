@@ -1,7 +1,7 @@
 ---
 id: ea-uneven-motivation
 group: ea
-title: Uneven motivation links
+title: Peers missing motivation links
 prompt: Where some core elements on the same view or folder already realize a Goal, Outcome, or Requirement, which peers have no motivation link? Report only; do not change the model.
 mode: analysis
 ---

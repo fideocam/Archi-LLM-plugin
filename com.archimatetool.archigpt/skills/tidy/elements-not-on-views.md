@@ -1,7 +1,7 @@
 ---
 id: tidy-elements-not-on-views
 group: tidy
-title: Elements not on any diagram
+title: Elements not placed on any view
 prompt: List catalog elements that do not appear as a node on any view. Report only; do not change the model.
 mode: analysis
 ---

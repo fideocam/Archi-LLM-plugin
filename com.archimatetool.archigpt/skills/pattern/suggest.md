@@ -1,7 +1,7 @@
 ---
 id: pattern-suggest
 group: pattern
-title: Suggest fitting patterns
+title: Suggest a pattern for this slice
 prompt: Suggest which catalog patterns fit the selected service, system, or open view. Rank a few and say which existing elements to reuse. Do not change the model.
 mode: analysis
 ---

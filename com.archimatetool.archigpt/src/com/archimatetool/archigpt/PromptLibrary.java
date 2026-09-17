@@ -1,5 +1,5 @@
 /**
- * Bundled tidy, view, pattern, and EA prompts (skill files under {@code skills/}).
+ * Bundled tidy, view, pattern, technology, and EA prompts (skill files under {@code skills/}).
  */
 package com.archimatetool.archigpt;
 
@@ -47,6 +47,7 @@ public final class PromptLibrary {
         TIDY("Tidy"),
         VIEW("View"),
         PATTERN("Pattern"),
+        TECHNOLOGY("Technology"),
         EA("EA");
 
         private final String label;
@@ -73,6 +74,9 @@ public final class PromptLibrary {
             if ("pattern".equals(v)) {
                 return PATTERN;
             }
+            if ("technology".equals(v) || "tech".equals(v)) {
+                return TECHNOLOGY;
+            }
             return EA;
         }
     }
@@ -80,9 +84,13 @@ public final class PromptLibrary {
     /** Tools-tab first dropdown: who the catalog is for. */
     public enum Role {
         SOLUTION_ARCHITECT("Solution architect",
-                "Tidy, view, and pattern tools for a service or system slice."),
-        EA("EA",
-                "Echo-gap analysis against what this model already shows in other views or for peers.");
+                "One service or system slice: this view, gaps versus peers on the canvas, and patterns to add."),
+        TECHNOLOGY_ARCHITECT("Technology architect",
+                "Hosts, paths, runtimes, and locations: redundancy, security, continuity, and technology choice as this model already shows them."),
+        EA("Enterprise architect",
+                "Landscape echo gaps across views, and EA fragments (capability, motivation, migration)."),
+        HYGIENE("Model hygiene",
+                "Catalog versus canvas: unused items, duplicate names, connections that do not match.");
 
         private final String label;
         private final String tooltip;
@@ -101,7 +109,57 @@ public final class PromptLibrary {
         }
 
         public static Role fromGroup(Group group) {
-            return group == Group.EA ? EA : SOLUTION_ARCHITECT;
+            if (group == Group.EA) {
+                return EA;
+            }
+            if (group == Group.TIDY) {
+                return HYGIENE;
+            }
+            if (group == Group.TECHNOLOGY) {
+                return TECHNOLOGY_ARCHITECT;
+            }
+            return SOLUTION_ARCHITECT;
+        }
+
+        static Role fromFrontMatterToken(String raw) {
+            if (raw == null) {
+                return null;
+            }
+            String v = raw.trim().toLowerCase(Locale.ROOT);
+            if ("solution".equals(v) || "sa".equals(v) || "solution-architect".equals(v)
+                    || "solution architect".equals(v)) {
+                return SOLUTION_ARCHITECT;
+            }
+            if ("technology".equals(v) || "tech".equals(v) || "ta".equals(v)
+                    || "technology-architect".equals(v) || "technology architect".equals(v)) {
+                return TECHNOLOGY_ARCHITECT;
+            }
+            if ("ea".equals(v) || "enterprise".equals(v) || "enterprise-architect".equals(v)
+                    || "enterprise architect".equals(v)) {
+                return EA;
+            }
+            if ("hygiene".equals(v) || "tidy".equals(v) || "model-hygiene".equals(v)
+                    || "model hygiene".equals(v)) {
+                return HYGIENE;
+            }
+            return null;
+        }
+
+        static List<Role> fromFrontMatter(String raw, Group group) {
+            List<Role> out = new ArrayList<Role>();
+            if (raw != null && !raw.trim().isEmpty()) {
+                String[] parts = raw.split(",");
+                for (int i = 0; i < parts.length; i++) {
+                    Role r = fromFrontMatterToken(parts[i]);
+                    if (r != null && !out.contains(r)) {
+                        out.add(r);
+                    }
+                }
+            }
+            if (out.isEmpty()) {
+                out.add(fromGroup(group));
+            }
+            return Collections.unmodifiableList(out);
         }
     }
 
@@ -113,9 +171,10 @@ public final class PromptLibrary {
         public final String skillBody;
         public final boolean analysisOnly;
         public final String catalogPath;
+        public final List<Role> roles;
 
         Entry(String id, Group group, String title, String prompt, String skillBody, boolean analysisOnly,
-                String catalogPath) {
+                String catalogPath, List<Role> roles) {
             this.id = id;
             this.group = group;
             this.title = title;
@@ -123,6 +182,7 @@ public final class PromptLibrary {
             this.skillBody = skillBody;
             this.analysisOnly = analysisOnly;
             this.catalogPath = catalogPath;
+            this.roles = roles;
         }
 
         public String comboLabel() {
@@ -131,10 +191,11 @@ public final class PromptLibrary {
 
         /** Label inside a task combo that already names the role. */
         public String titleInCategory() {
-            if (group == Group.EA) {
-                return title;
-            }
-            return group.label() + ": " + title;
+            return title;
+        }
+
+        public boolean forRole(Role role) {
+            return role != null && roles != null && roles.contains(role);
         }
     }
 
@@ -183,14 +244,14 @@ public final class PromptLibrary {
             return out;
         }
         for (Entry e : all()) {
-            if (Role.fromGroup(e.group) == role) {
+            if (e.forRole(role)) {
                 out.add(e);
             }
         }
         return out;
     }
 
-    /** Tidy, View, and Pattern entries (solution-architect tools), in catalog order. */
+    /** View and solution-pattern entries (one service or system slice), in catalog order. */
     public static List<Entry> solutionArchitectEntries() {
         return entriesForRole(Role.SOLUTION_ARCHITECT);
     }
@@ -262,9 +323,10 @@ public final class PromptLibrary {
             return null;
         }
         Group group = Group.fromFrontMatter(fields.get("group"));
+        List<Role> roles = Role.fromFrontMatter(fields.get("roles"), group);
         String mode = fields.get("mode");
         boolean analysisOnly = mode == null || !"changes".equals(mode.trim().toLowerCase(Locale.ROOT));
-        return new Entry(id.trim(), group, title.trim(), prompt.trim(), body, analysisOnly, catalogPath);
+        return new Entry(id.trim(), group, title.trim(), prompt.trim(), body, analysisOnly, catalogPath, roles);
     }
 
     private static Map<String, String> parseFrontMatter(String front) {

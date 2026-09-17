@@ -1,8 +1,9 @@
 ---
 id: pattern-capability-map
 group: pattern
-title: Capability map slice
-prompt: Add a Capability map slice (capability realized by an application and optionally a process). Reuse existing elements when they match. Do not create a new view unless I ask for one.
+roles: ea
+title: Add a capability map slice
+prompt: Add a capability-map slice (capability realized by an application and optionally a process). Reuse existing elements when they match. Do not create a new view unless I ask for one.
 mode: changes
 ---
 

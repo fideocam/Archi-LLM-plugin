@@ -1,7 +1,7 @@
 ---
 id: tidy-relationships-not-on-views
 group: tidy
-title: Relationships not on any diagram
+title: Relationships not drawn on any view
 prompt: List model relationships that do not appear as a connection on any view. Report only; do not change the model.
 mode: analysis
 ---

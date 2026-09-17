@@ -1,8 +1,8 @@
 ---
 id: pattern-service-sandwich
 group: pattern
-title: Service sandwich
-prompt: Add a Service sandwich fragment (business, application, and technology services with realizing component and node). Reuse existing elements when they match. Do not create a new view unless I ask for one.
+title: Add a service sandwich
+prompt: Add a service sandwich for this slice (business, application, and technology services with a realizing component and node). Reuse existing elements when they match. Do not create a new view unless I ask for one.
 mode: changes
 ---
 

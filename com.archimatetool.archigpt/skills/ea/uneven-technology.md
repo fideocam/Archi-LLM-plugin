@@ -1,8 +1,8 @@
 ---
 id: ea-uneven-technology
 group: ea
-title: Uneven technology host
-prompt: Where some application components on the same view or folder are already realized by a Node, SystemSoftware, or Device, which peer applications have no host? Report only; do not change the model.
+title: Applications missing a host
+prompt: Where some application components on the same view or folder are already realized by a Node, System Software, or Device, which peer applications have no host? Report only; do not change the model.
 mode: analysis
 ---
 

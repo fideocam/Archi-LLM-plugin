@@ -1,7 +1,7 @@
 ---
 id: ea-uneven-assignment
 group: ea
-title: Uneven assignment
+title: Peers missing an assigned owner
 prompt: Where some applications or processes on the same view or folder already have an assigned role or actor, which peers have none? Report only; do not change the model.
 mode: analysis
 ---

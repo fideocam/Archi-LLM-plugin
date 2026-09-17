@@ -1,7 +1,7 @@
 ---
 id: tidy-duplicate-names
 group: tidy
-title: Duplicate names
+title: Duplicate names in the catalog
 prompt: Find elements of the same ArchiMate type that share the same or very similar names. List each group with ids. Report only; do not change the model.
 mode: analysis
 ---

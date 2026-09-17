@@ -1,8 +1,8 @@
 ---
 id: pattern-process-collaboration
 group: pattern
-title: Process collaboration
-prompt: Add a Process collaboration fragment (process, role or actor, business object, and triggering or flow). Reuse existing elements when they match. Do not create a new view unless I ask for one.
+title: Add process collaboration
+prompt: Add a process-collaboration fragment for this slice (process, role or actor, business object, and triggering or flow). Reuse existing elements when they match. Do not create a new view unless I ask for one.
 mode: changes
 ---
 

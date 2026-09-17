@@ -1,8 +1,8 @@
 ---
 id: ea-uneven-service-stack
 group: ea
-title: Uneven service stack
-prompt: Where this model already completes a serving stack for some BusinessServices, which peer services on the same view or folder lack that stack? Report only; do not change the model.
+title: Services missing their peers' stack
+prompt: Where this model already completes a serving stack for some Business Services, which peer services on the same view or folder lack that stack? Report only; do not change the model.
 mode: analysis
 ---
 

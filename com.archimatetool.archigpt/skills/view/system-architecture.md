@@ -1,8 +1,8 @@
 ---
 id: view-system-architecture
 group: view
-title: Tech architecture for a system
-prompt: On this view, where some applications already show interfaces, flows, data access, or a host, which peer systems on the same view lack that related element? Report only; do not propose a full EA model.
+title: Gaps on this system architecture
+prompt: On this view, where some applications already show interfaces, flows, data access, or a host, which peer systems on the same canvas lack that related element? Stay on this slice; do not propose a full EA model. Report only.
 mode: analysis
 ---
 

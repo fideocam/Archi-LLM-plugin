@@ -1,8 +1,8 @@
 ---
 id: ea-uneven-application-support
 group: ea
-title: Uneven application support
-prompt: Where some BusinessProcesses on the same view or folder already have Serving or Realization to an application, which peer processes have none? Report only; do not change the model.
+title: Processes missing application support
+prompt: Where some Business Processes on the same view or folder already have Serving or Realization to an application, which peer processes have none? Report only; do not change the model.
 mode: analysis
 ---
 
