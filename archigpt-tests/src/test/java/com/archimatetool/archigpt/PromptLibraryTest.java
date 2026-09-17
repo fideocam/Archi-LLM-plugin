@@ -51,16 +51,19 @@ public class PromptLibraryTest {
         assertEquals(3, view);
         assertEquals(9, pattern);
         assertEquals(9, ea);
-        List<PromptLibrary.Entry> solution = PromptLibrary.solutionArchitectEntries();
-        List<PromptLibrary.Entry> eaOnly = PromptLibrary.entriesIn(PromptLibrary.Group.EA);
+        List<PromptLibrary.Entry> solution = PromptLibrary.entriesForRole(PromptLibrary.Role.SOLUTION_ARCHITECT);
+        List<PromptLibrary.Entry> eaOnly = PromptLibrary.entriesForRole(PromptLibrary.Role.EA);
         assertEquals(tidy + view + pattern, solution.size());
         assertEquals(ea, eaOnly.size());
+        assertEquals(solution, PromptLibrary.solutionArchitectEntries());
+        assertEquals(PromptLibrary.entriesIn(PromptLibrary.Group.EA), eaOnly);
         for (PromptLibrary.Entry e : solution) {
-            assertFalse(e.id, e.group == PromptLibrary.Group.EA);
+            assertEquals(e.id, PromptLibrary.Role.SOLUTION_ARCHITECT, PromptLibrary.Role.fromGroup(e.group));
         }
         for (PromptLibrary.Entry e : eaOnly) {
-            assertEquals(e.id, PromptLibrary.Group.EA, e.group);
+            assertEquals(e.id, PromptLibrary.Role.EA, PromptLibrary.Role.fromGroup(e.group));
         }
+        assertEquals(2, PromptLibrary.Role.values().length);
     }
 
     @Test

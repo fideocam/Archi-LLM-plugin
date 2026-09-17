@@ -30,8 +30,8 @@ public final class PromptLibrary {
 
     public static final String NONE_LABEL = "(none) — type your own prompt";
 
-    /** First item in each Tools-tab category combo. */
-    public static final String NONE_IN_CATEGORY = "(none)";
+    /** First item in the Tools-tab task combo. */
+    public static final String NONE_TASK = "(none)";
 
     /** Cap on injected skill body so one tool cannot dominate the context window. */
     public static final int MAX_SKILL_CHARS = 8_000;
@@ -77,6 +77,34 @@ public final class PromptLibrary {
         }
     }
 
+    /** Tools-tab first dropdown: who the catalog is for. */
+    public enum Role {
+        SOLUTION_ARCHITECT("Solution architect",
+                "Tidy, view, and pattern tools for a service or system slice."),
+        EA("EA",
+                "Echo-gap analysis against what this model already shows in other views or for peers.");
+
+        private final String label;
+        private final String tooltip;
+
+        Role(String label, String tooltip) {
+            this.label = label;
+            this.tooltip = tooltip;
+        }
+
+        public String label() {
+            return label;
+        }
+
+        public String tooltip() {
+            return tooltip;
+        }
+
+        public static Role fromGroup(Group group) {
+            return group == Group.EA ? EA : SOLUTION_ARCHITECT;
+        }
+    }
+
     public static final class Entry {
         public final String id;
         public final Group group;
@@ -101,7 +129,7 @@ public final class PromptLibrary {
             return group.label() + ": " + title;
         }
 
-        /** Label inside a category combo that already names the group. */
+        /** Label inside a task combo that already names the role. */
         public String titleInCategory() {
             if (group == Group.EA) {
                 return title;
@@ -148,15 +176,23 @@ public final class PromptLibrary {
         return out;
     }
 
-    /** Tidy, View, and Pattern entries (solution-architect tools), in catalog order. */
-    public static List<Entry> solutionArchitectEntries() {
+    /** Catalog entries for a Tools-tab role, in catalog order. */
+    public static List<Entry> entriesForRole(Role role) {
         List<Entry> out = new ArrayList<Entry>();
+        if (role == null) {
+            return out;
+        }
         for (Entry e : all()) {
-            if (e.group != Group.EA) {
+            if (Role.fromGroup(e.group) == role) {
                 out.add(e);
             }
         }
         return out;
+    }
+
+    /** Tidy, View, and Pattern entries (solution-architect tools), in catalog order. */
+    public static List<Entry> solutionArchitectEntries() {
+        return entriesForRole(Role.SOLUTION_ARCHITECT);
     }
 
     /**

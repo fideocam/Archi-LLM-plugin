@@ -57,7 +57,7 @@ Skills complement:
 
 ### With ArchiGPT / Ollama (this repo)
 
-ArchiGPT sends a **fixed system prompt** from `com.archimatetool.archigpt/system-prompt.txt` plus the model XML and user request. Bundled tools live under `com.archimatetool.archigpt/skills/` (tidy, view, pattern, ea). The **Tools** tab has separate **Solution architect** and **EA** lists; picking a tool fills the prompt on that tab and appends the skill to the user message (not the global system prompt). You can still:
+ArchiGPT sends a **fixed system prompt** from `com.archimatetool.archigpt/system-prompt.txt` plus the model XML and user request. Bundled tools live under `com.archimatetool.archigpt/skills/` (tidy, view, pattern, ea). The **Tools** tab has a **Role** list and a **Task** list for that role; picking a task fills the prompt on that tab only (the ArchiGPT tab stays freeform) and appends the skill to the user message (not the global system prompt). You can still:
 
 1. **Edit the system prompt** — merge skill content into `system-prompt.txt` (good for behaviors that must always apply to ArchiMate JSON/XML).  
 2. **Put extra skill text in the user message** — edit the filled prompt, or prepend rules in the prompt box.  

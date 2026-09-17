@@ -82,13 +82,11 @@ public class ArchiGPTView extends ViewPart {
     private static final int MAX_CHUNKED_DEBUG_PREVIEW_CHARS = 250_000;
 
     private Text promptText;
-    private Combo solutionToolsCombo;
-    private Combo eaToolsCombo;
-    private List<PromptLibrary.Entry> solutionToolChoices = new ArrayList<PromptLibrary.Entry>();
-    private List<PromptLibrary.Entry> eaToolChoices = new ArrayList<PromptLibrary.Entry>();
+    private Combo toolsRoleCombo;
+    private Combo toolsTaskCombo;
+    private List<PromptLibrary.Entry> toolsTaskChoices = new ArrayList<PromptLibrary.Entry>();
     private Text toolsPromptPreview;
-    private boolean syncingPromptText;
-    private boolean syncingToolCombos;
+    private Text toolsResponseText;
     private Text whatWasSentSummaryText;
     private Text xmlPreviewText;
     private Text responseText;
@@ -114,6 +112,8 @@ public class ArchiGPTView extends ViewPart {
     private Label whatWasSentLabel;
     private Label xmlPreviewLabel;
     private Job currentJob;
+    /** Response widget for the in-flight request (ArchiGPT tab or Tools tab). */
+    private Text inFlightResponseText;
     private CTabFolder tabFolder;
     private CTabItem mainTabItem;
     /** Cached selection from model tree/diagram so it is still used when ArchiGPT view has focus. */
@@ -173,25 +173,14 @@ public class ArchiGPTView extends ViewPart {
         promptData.heightHint = 120;
         promptText.setLayoutData(promptData);
         promptText.setMessage("Describe the change you want to make to your ArchiMate model...");
-        promptText.setToolTipText("Press Enter to send, Shift+Enter for a new line. Ready-made tools are on the Tools tab.");
-        bindEnterToSend(promptText);
-        promptText.addModifyListener(e -> {
-            if (syncingPromptText || toolsPromptPreview == null || toolsPromptPreview.isDisposed()) {
-                return;
-            }
-            syncingPromptText = true;
-            try {
-                toolsPromptPreview.setText(promptText.getText());
-            } finally {
-                syncingPromptText = false;
-            }
-        });
+        promptText.setToolTipText("Press Enter to send, Shift+Enter for a new line. Ready-made tools are on the Tools tab and do not change this prompt.");
+        bindEnterToSend(promptText, false);
 
         Label promptHint = new Label(mainComposite, SWT.WRAP);
         promptHint.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         promptHint.setText("Press Enter to send (Shift+Enter for a new line). Ready-made tools are on the Tools tab.");
 
-        sendButton = createAskButton(mainComposite);
+        sendButton = createAskButton(mainComposite, false);
 
         Label responseLabel = new Label(mainComposite, SWT.NONE);
         responseLabel.setText("Response:");
@@ -229,37 +218,38 @@ public class ArchiGPTView extends ViewPart {
         GridData toolsIntroData = new GridData(SWT.FILL, SWT.TOP, true, false);
         toolsIntroData.widthHint = 400;
         toolsIntro.setLayoutData(toolsIntroData);
-        toolsIntro.setText("Pick a tool from one category. The prompt appears below; you can edit it before asking. Ask ArchiGPT is also on the ArchiGPT tab (Enter sends).");
+        toolsIntro.setText("Pick a role, then a task. The prompt and reply stay on this tab. The ArchiGPT tab keeps its own prompt.");
 
-        Label solutionLabel = new Label(toolsComposite, SWT.NONE);
-        solutionLabel.setText("Solution architect:");
-        solutionLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        Label roleLabel = new Label(toolsComposite, SWT.NONE);
+        roleLabel.setText("Role:");
+        roleLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        solutionToolsCombo = new Combo(toolsComposite, SWT.DROP_DOWN | SWT.READ_ONLY);
-        solutionToolsCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        solutionToolsCombo.setToolTipText("Tidy, view, and pattern tools for a service or system slice.");
-        solutionToolsCombo.addSelectionListener(new SelectionAdapter() {
+        toolsRoleCombo = new Combo(toolsComposite, SWT.DROP_DOWN | SWT.READ_ONLY);
+        toolsRoleCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        toolsRoleCombo.setToolTipText("Who these tools are for.");
+        toolsRoleCombo.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                onToolCategorySelected(true);
+                onToolsRoleSelected();
             }
         });
 
-        Label eaLabel = new Label(toolsComposite, SWT.NONE);
-        eaLabel.setText("EA:");
-        eaLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        Label taskLabel = new Label(toolsComposite, SWT.NONE);
+        taskLabel.setText("Task:");
+        taskLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        eaToolsCombo = new Combo(toolsComposite, SWT.DROP_DOWN | SWT.READ_ONLY);
-        eaToolsCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        eaToolsCombo.setToolTipText("Echo-gap analysis against what this model already shows in other views or for peers.");
-        eaToolsCombo.addSelectionListener(new SelectionAdapter() {
+        toolsTaskCombo = new Combo(toolsComposite, SWT.DROP_DOWN | SWT.READ_ONLY);
+        toolsTaskCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        toolsTaskCombo.setToolTipText("Tasks for the selected role.");
+        toolsTaskCombo.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                onToolCategorySelected(false);
+                onToolsTaskSelected();
             }
         });
 
-        populatePromptLibraryCombos();
+        populateToolsRoleCombo();
+        populateToolsTaskCombo();
 
         Label chosenPromptLabel = new Label(toolsComposite, SWT.NONE);
         chosenPromptLabel.setText("Chosen prompt:");
@@ -270,22 +260,21 @@ public class ArchiGPTView extends ViewPart {
         toolsPromptData.minimumHeight = 80;
         toolsPromptData.heightHint = 100;
         toolsPromptPreview.setLayoutData(toolsPromptData);
-        toolsPromptPreview.setMessage("Select a tool to see its prompt here.");
-        toolsPromptPreview.setToolTipText("This is the prompt that will be sent. You can edit it. Press Enter to send (Shift+Enter for a new line). It stays in sync with the ArchiGPT tab.");
-        bindEnterToSend(toolsPromptPreview);
-        toolsPromptPreview.addModifyListener(e -> {
-            if (syncingPromptText || promptText == null || promptText.isDisposed()) {
-                return;
-            }
-            syncingPromptText = true;
-            try {
-                promptText.setText(toolsPromptPreview.getText());
-            } finally {
-                syncingPromptText = false;
-            }
-        });
+        toolsPromptPreview.setMessage("Select a role and task to see its prompt here.");
+        toolsPromptPreview.setToolTipText("This is the prompt that will be sent from the Tools tab. You can edit it. Press Enter to send (Shift+Enter for a new line). It does not change the ArchiGPT tab.");
+        bindEnterToSend(toolsPromptPreview, true);
 
-        toolsSendButton = createAskButton(toolsComposite);
+        toolsSendButton = createAskButton(toolsComposite, true);
+
+        Label toolsResponseLabel = new Label(toolsComposite, SWT.NONE);
+        toolsResponseLabel.setText("Response:");
+        toolsResponseLabel.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        toolsResponseText = new Text(toolsComposite, SWT.BORDER | SWT.MULTI | SWT.WRAP | SWT.V_SCROLL | SWT.READ_ONLY);
+        GridData toolsResponseData = new GridData(SWT.FILL, SWT.FILL, true, true);
+        toolsResponseData.minimumHeight = 120;
+        toolsResponseData.heightHint = 140;
+        toolsResponseText.setLayoutData(toolsResponseData);
 
         // ---- Settings tab: URL, model, context ----
         CTabItem serverTab = new CTabItem(tabFolder, SWT.NONE);
@@ -855,23 +844,25 @@ public class ArchiGPTView extends ViewPart {
         if (promptText == null || promptText.isDisposed()) return;
         Runnable update = () -> {
             if (promptText.isDisposed()) return;
-            promptText.setEditable(!inProgress);
+            boolean toolsInFlight = inProgress && inFlightResponseText == toolsResponseText;
+            boolean mainInFlight = inProgress && !toolsInFlight;
+            promptText.setEditable(!mainInFlight);
             promptText.setForeground(promptText.getDisplay().getSystemColor(
-                    inProgress ? SWT.COLOR_DARK_GRAY : SWT.COLOR_WIDGET_FOREGROUND));
+                    mainInFlight ? SWT.COLOR_DARK_GRAY : SWT.COLOR_WIDGET_FOREGROUND));
             if (sendButton != null && !sendButton.isDisposed()) {
-                sendButton.setText(inProgress ? "Stop ArchiGPT" : "Ask ArchiGPT");
+                sendButton.setText(mainInFlight ? "Stop ArchiGPT" : "Ask ArchiGPT");
             }
             if (toolsSendButton != null && !toolsSendButton.isDisposed()) {
-                toolsSendButton.setText(inProgress ? "Stop ArchiGPT" : "Ask ArchiGPT");
+                toolsSendButton.setText(toolsInFlight ? "Stop ArchiGPT" : "Ask ArchiGPT");
             }
             if (toolsPromptPreview != null && !toolsPromptPreview.isDisposed()) {
-                toolsPromptPreview.setEditable(!inProgress);
+                toolsPromptPreview.setEditable(!toolsInFlight);
             }
-            if (solutionToolsCombo != null && !solutionToolsCombo.isDisposed()) {
-                solutionToolsCombo.setEnabled(!inProgress);
+            if (toolsRoleCombo != null && !toolsRoleCombo.isDisposed()) {
+                toolsRoleCombo.setEnabled(!toolsInFlight);
             }
-            if (eaToolsCombo != null && !eaToolsCombo.isDisposed()) {
-                eaToolsCombo.setEnabled(!inProgress);
+            if (toolsTaskCombo != null && !toolsTaskCombo.isDisposed()) {
+                toolsTaskCombo.setEnabled(!toolsInFlight);
             }
         };
         if (Display.getCurrent() != null) {
@@ -1170,122 +1161,126 @@ public class ArchiGPTView extends ViewPart {
         return merged;
     }
 
-    private void showMainTab() {
-        if (tabFolder != null && !tabFolder.isDisposed() && mainTabItem != null && !mainTabItem.isDisposed()) {
-            tabFolder.setSelection(mainTabItem);
-        }
-    }
-
-    private void bindEnterToSend(Text text) {
+    private void bindEnterToSend(Text text, final boolean fromTools) {
         text.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
                 if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR) {
                     if ((e.stateMask & SWT.SHIFT) == 0) {
                         e.doit = false;
-                        if (currentJob != null) onStopRequest(); else onSendPrompt();
+                        onAskOrStop(fromTools);
                     }
                 }
             }
         });
     }
 
-    private Button createAskButton(Composite parent) {
+    private Button createAskButton(Composite parent, final boolean fromTools) {
         Button button = new Button(parent, SWT.PUSH);
         button.setText("Ask ArchiGPT");
         button.setLayoutData(new GridData(SWT.END, SWT.CENTER, true, false));
         button.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                if (currentJob != null) onStopRequest(); else onSendPrompt();
+                onAskOrStop(fromTools);
             }
         });
         return button;
     }
 
-    private void populatePromptLibraryCombos() {
-        fillCategoryCombo(solutionToolsCombo, solutionToolChoices, PromptLibrary.solutionArchitectEntries(),
-                "Tidy, view, and pattern tools for a service or system slice.");
-        fillCategoryCombo(eaToolsCombo, eaToolChoices, PromptLibrary.entriesIn(PromptLibrary.Group.EA),
-                "Echo-gap analysis against what this model already shows in other views or for peers.");
-    }
-
-    private void fillCategoryCombo(Combo combo, List<PromptLibrary.Entry> choices, List<PromptLibrary.Entry> entries,
-            String tooltip) {
-        choices.clear();
-        if (combo == null || combo.isDisposed()) {
+    /** Stop only if this tab started the in-flight request; otherwise send from this tab when idle. */
+    private void onAskOrStop(boolean fromTools) {
+        if (currentJob != null) {
+            boolean inFlightFromTools = inFlightResponseText == toolsResponseText;
+            if (fromTools == inFlightFromTools) {
+                onStopRequest();
+            }
             return;
         }
-        combo.removeAll();
-        combo.add(PromptLibrary.NONE_IN_CATEGORY);
-        choices.add(null);
+        onSendPrompt(fromTools);
+    }
+
+    private void populateToolsRoleCombo() {
+        if (toolsRoleCombo == null || toolsRoleCombo.isDisposed()) {
+            return;
+        }
+        toolsRoleCombo.removeAll();
+        PromptLibrary.Role[] roles = PromptLibrary.Role.values();
+        for (int i = 0; i < roles.length; i++) {
+            toolsRoleCombo.add(roles[i].label());
+        }
+        toolsRoleCombo.select(0);
+        toolsRoleCombo.setToolTipText(roles[0].tooltip());
+    }
+
+    private PromptLibrary.Role selectedToolsRole() {
+        if (toolsRoleCombo == null || toolsRoleCombo.isDisposed()) {
+            return PromptLibrary.Role.SOLUTION_ARCHITECT;
+        }
+        int i = toolsRoleCombo.getSelectionIndex();
+        PromptLibrary.Role[] roles = PromptLibrary.Role.values();
+        if (i < 0 || i >= roles.length) {
+            return PromptLibrary.Role.SOLUTION_ARCHITECT;
+        }
+        return roles[i];
+    }
+
+    private void populateToolsTaskCombo() {
+        toolsTaskChoices.clear();
+        if (toolsTaskCombo == null || toolsTaskCombo.isDisposed()) {
+            return;
+        }
+        PromptLibrary.Role role = selectedToolsRole();
+        toolsTaskCombo.removeAll();
+        toolsTaskCombo.add(PromptLibrary.NONE_TASK);
+        toolsTaskChoices.add(null);
+        List<PromptLibrary.Entry> entries = PromptLibrary.entriesForRole(role);
         for (int i = 0; i < entries.size(); i++) {
             PromptLibrary.Entry e = entries.get(i);
-            combo.add(e.titleInCategory());
-            choices.add(e);
+            toolsTaskCombo.add(e.titleInCategory());
+            toolsTaskChoices.add(e);
         }
-        combo.select(0);
-        combo.setToolTipText(tooltip);
+        toolsTaskCombo.select(0);
+        toolsTaskCombo.setToolTipText(role.tooltip());
+        if (toolsRoleCombo != null && !toolsRoleCombo.isDisposed()) {
+            toolsRoleCombo.setToolTipText(role.tooltip());
+        }
     }
 
     private PromptLibrary.Entry selectedPromptLibraryEntry() {
-        PromptLibrary.Entry fromSolution = entryFromCombo(solutionToolsCombo, solutionToolChoices);
-        if (fromSolution != null) {
-            return fromSolution;
-        }
-        return entryFromCombo(eaToolsCombo, eaToolChoices);
-    }
-
-    private static PromptLibrary.Entry entryFromCombo(Combo combo, List<PromptLibrary.Entry> choices) {
-        if (combo == null || combo.isDisposed() || choices == null) {
+        if (toolsTaskCombo == null || toolsTaskCombo.isDisposed() || toolsTaskChoices == null) {
             return null;
         }
-        int i = combo.getSelectionIndex();
-        if (i <= 0 || i >= choices.size()) {
+        int i = toolsTaskCombo.getSelectionIndex();
+        if (i <= 0 || i >= toolsTaskChoices.size()) {
             return null;
         }
-        return choices.get(i);
+        return toolsTaskChoices.get(i);
     }
 
-    private void onToolCategorySelected(boolean solutionArchitectSide) {
-        if (syncingToolCombos) {
-            return;
-        }
-        syncingToolCombos = true;
-        try {
-            if (solutionArchitectSide) {
-                if (eaToolsCombo != null && !eaToolsCombo.isDisposed()) {
-                    eaToolsCombo.select(0);
-                }
-            } else if (solutionToolsCombo != null && !solutionToolsCombo.isDisposed()) {
-                solutionToolsCombo.select(0);
-            }
-        } finally {
-            syncingToolCombos = false;
-        }
+    private void onToolsRoleSelected() {
+        populateToolsTaskCombo();
+        setToolsPrompt("");
+    }
+
+    private void onToolsTaskSelected() {
         PromptLibrary.Entry e = selectedPromptLibraryEntry();
-        String text = e != null ? e.prompt : "";
-        setPromptFields(text);
+        setToolsPrompt(e != null ? e.prompt : "");
     }
 
-    private void setPromptFields(String text) {
+    private void setToolsPrompt(String text) {
         String t = text != null ? text : "";
-        syncingPromptText = true;
-        try {
-            if (promptText != null && !promptText.isDisposed()) {
-                promptText.setText(t);
-            }
-            if (toolsPromptPreview != null && !toolsPromptPreview.isDisposed()) {
-                toolsPromptPreview.setText(t);
-            }
-        } finally {
-            syncingPromptText = false;
+        if (toolsPromptPreview != null && !toolsPromptPreview.isDisposed()) {
+            toolsPromptPreview.setText(t);
         }
     }
 
     private void onStopRequest() {
         userRequestedCancel = true;
-        responseText.setText("Cancelling…");
+        Text dest = activeResponseWidget();
+        if (dest != null && !dest.isDisposed()) {
+            dest.setText("Cancelling…");
+        }
         if (currentJob != null) {
             currentJob.cancel();
         }
@@ -1371,15 +1366,26 @@ public class ArchiGPTView extends ViewPart {
         return lastModelSelection;
     }
 
-    private void onSendPrompt() {
-        showMainTab();
-        String prompt = promptText.getText().trim();
+    private Text activeResponseWidget() {
+        if (inFlightResponseText != null && !inFlightResponseText.isDisposed()) {
+            return inFlightResponseText;
+        }
+        return responseText;
+    }
+
+    private void onSendPrompt(boolean fromTools) {
+        Text promptWidget = fromTools ? toolsPromptPreview : promptText;
+        Text destResponse = fromTools ? toolsResponseText : responseText;
+        if (promptWidget == null || promptWidget.isDisposed() || destResponse == null || destResponse.isDisposed()) {
+            return;
+        }
+        String prompt = promptWidget.getText().trim();
         if (prompt.isEmpty()) {
-            responseText.setText("Please enter a prompt.");
+            destResponse.setText(fromTools ? "Select a task or enter a prompt." : "Please enter a prompt.");
             return;
         }
         if (IEditorModelManager.INSTANCE.getModels().isEmpty()) {
-            responseText.setText("Open an ArchiMate model first. ArchiGPT will use it as context.");
+            destResponse.setText("Open an ArchiMate model first. ArchiGPT will use it as context.");
             return;
         }
 
@@ -1413,7 +1419,7 @@ public class ArchiGPTView extends ViewPart {
             selectionContext = focusLine + (selectionContextBase != null && !selectionContextBase.isEmpty() ? selectionContextBase : "");
         }
         final String promptFinal = prompt;
-        final PromptLibrary.Entry selectedTool = selectedPromptLibraryEntry();
+        final PromptLibrary.Entry selectedTool = fromTools ? selectedPromptLibraryEntry() : null;
         if (model != null) {
             String findings = CatalogHygiene.findingsFor(model, selectedTool, promptFinal);
             if (findings != null && !findings.isEmpty()) {
@@ -1645,11 +1651,12 @@ public class ArchiGPTView extends ViewPart {
             whatWasSentSummaryText.setText(summary.toString());
         }
 
-        final Text responseWidget = responseText;
+        final Text responseWidget = destResponse;
+        inFlightResponseText = destResponse;
         userRequestedCancel = false;
         currentConnectionRef = new AtomicReference<>();
         setRequestInProgress(true);
-        responseText.setText("Connecting to Ollama…");
+        destResponse.setText("Connecting to Ollama…");
 
         currentJob = new Job("ArchiGPT – Ollama") {
             private void updateStatus(String message) {
@@ -1666,10 +1673,12 @@ public class ArchiGPTView extends ViewPart {
                         responseWidget.setText(message);
                     }
                     if (saveAsButton != null && !saveAsButton.isDisposed()) {
-                        saveAsButton.setEnabled(isFullModelXml(message));
+                        boolean fromMainTab = responseWidget == responseText;
+                        saveAsButton.setEnabled(fromMainTab && isFullModelXml(message));
                     }
                     setRequestInProgress(false);
                     currentJob = null;
+                    inFlightResponseText = null;
                 });
             }
 
