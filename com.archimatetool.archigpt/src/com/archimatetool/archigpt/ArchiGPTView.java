@@ -1746,15 +1746,8 @@ public class ArchiGPTView extends ViewPart {
                                     importMessage[0] = "The ArchiMate model used for this request is no longer open; import skipped. Open the model and run the request again.";
                                 } else {
                                     IArchimateModel model = modelForImport;
-                                    boolean droppedLlmDiagram = false;
-                                    if (targetDiagram != null && !DiagramCreationIntent.userAskedForBrandNewView(promptFinal)) {
-                                        if (resultToImport.getDiagram() != null
-                                                && resultToImport.getDiagram().getName() != null
-                                                && !resultToImport.getDiagram().getName().isEmpty()) {
-                                            resultToImport.setDiagram(null);
-                                            droppedLlmDiagram = true;
-                                        }
-                                    }
+                                    boolean droppedLlmDiagram = DiagramCreationIntent.retargetDiagramToOpenView(
+                                            resultToImport, targetDiagram, promptFinal);
                                     ArchiMateLLMImporter.ImportStats stats = ArchiMateLLMImporter.importIntoModel(resultToImport, model, targetFolder, targetDiagram);
                                     StringBuilder where = new StringBuilder();
                                     if (targetFolder != null) {
@@ -1764,7 +1757,8 @@ public class ArchiGPTView extends ViewPart {
                                         if (where.length() > 0) where.append(" and");
                                         where.append(" added to view \"").append(targetDiagram.getName()).append("\"");
                                     }
-                                    if (resultToImport.getDiagram() != null && resultToImport.getDiagram().getName() != null) {
+                                    if (!droppedLlmDiagram && resultToImport.getDiagram() != null
+                                            && resultToImport.getDiagram().getName() != null) {
                                         if (where.length() > 0) where.append(".");
                                         where.append(" Created new view \"").append(resultToImport.getDiagram().getName()).append("\"");
                                     }
@@ -1773,24 +1767,28 @@ public class ArchiGPTView extends ViewPart {
                                     int renamedEl = stats.getRenamedElements();
                                     int renamedRel = stats.getRenamedRelationships();
                                     int documented = stats.getUpdatedDocumentation();
+                                    int addedToView = stats.getAddedToView();
                                     int remEl = resultToImport.getRemoveElementIds().size(), remRel = resultToImport.getRemoveRelationshipIds().size();
                                     int remDiag = resultToImport.getRemoveDiagramNames().size();
                                     int remFromDiagEl = resultToImport.getRemoveElementFromDiagramIds().size();
                                     int remFromDiagRel = resultToImport.getRemoveRelationshipFromDiagramIds().size();
                                     String action = "Imported into model \"" + model.getName() + "\"" + where;
                                     if (droppedLlmDiagram) {
-                                        action += " The reply included a new \"diagram\" block; it was ignored because a diagram was open and you did not ask for a new view — shapes were added to the open view.";
+                                        action += " The reply included a new \"diagram\" block; it was applied to the open view instead of creating another canvas.";
                                     }
                                     boolean named = renamedEl > 0 || renamedRel > 0;
                                     if (renamedEl > 0) action += ": renamed " + renamedEl + " element(s).";
                                     if (renamedRel > 0) action += (renamedEl > 0 ? " " : ": ") + "renamed " + renamedRel + " relationship(s).";
                                     if (addEl > 0 || addRel > 0) action += (named ? " " : ": ") + addEl + " elements, " + addRel + " relationships added.";
-                                    if (documented > 0) action += (named || addEl > 0 || addRel > 0 ? " " : ": ") + "updated documentation on " + documented + " concept(s).";
-                                    if (remEl > 0 || remRel > 0) action += (named || addEl > 0 || addRel > 0 || documented > 0 ? " " : ": ") + "Removed " + remEl + " elements, " + remRel + " relationships from model.";
-                                    if (remFromDiagEl > 0 || remFromDiagRel > 0) action += (named || addEl > 0 || addRel > 0 || documented > 0 || remEl > 0 || remRel > 0 ? " " : ": ") + "Removed " + remFromDiagEl + " element(s), " + remFromDiagRel + " relationship(s) from diagram only.";
-                                    if (remDiag > 0) action += (named || addEl > 0 || addRel > 0 || documented > 0 || remEl > 0 || remRel > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 ? " " : ": ") + "Removed " + remDiag + " diagram(s).";
-                                    boolean diagramCreated = resultToImport.getDiagram() != null && resultToImport.getDiagram().getName() != null && !resultToImport.getDiagram().getName().isEmpty();
-                                    importMessage[0] = (named || addEl > 0 || addRel > 0 || documented > 0 || remEl > 0 || remRel > 0 || remDiag > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 || diagramCreated) ? action : "No changes applied.";
+                                    if (addedToView > 0) action += (named || addEl > 0 || addRel > 0 ? " " : ": ") + "placed " + addedToView + " item(s) on the view.";
+                                    if (documented > 0) action += (named || addEl > 0 || addRel > 0 || addedToView > 0 ? " " : ": ") + "updated documentation on " + documented + " concept(s).";
+                                    if (remEl > 0 || remRel > 0) action += (named || addEl > 0 || addRel > 0 || addedToView > 0 || documented > 0 ? " " : ": ") + "Removed " + remEl + " elements, " + remRel + " relationships from model.";
+                                    if (remFromDiagEl > 0 || remFromDiagRel > 0) action += (named || addEl > 0 || addRel > 0 || addedToView > 0 || documented > 0 || remEl > 0 || remRel > 0 ? " " : ": ") + "Removed " + remFromDiagEl + " element(s), " + remFromDiagRel + " relationship(s) from diagram only.";
+                                    if (remDiag > 0) action += (named || addEl > 0 || addRel > 0 || addedToView > 0 || documented > 0 || remEl > 0 || remRel > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 ? " " : ": ") + "Removed " + remDiag + " diagram(s).";
+                                    boolean diagramCreated = !droppedLlmDiagram && resultToImport.getDiagram() != null
+                                            && resultToImport.getDiagram().getName() != null
+                                            && !resultToImport.getDiagram().getName().isEmpty();
+                                    importMessage[0] = (named || addEl > 0 || addRel > 0 || addedToView > 0 || documented > 0 || remEl > 0 || remRel > 0 || remDiag > 0 || remFromDiagEl > 0 || remFromDiagRel > 0 || diagramCreated) ? action : "No changes applied.";
                                 }
                             });
                             toShow = importMessage[0] + "\n\nRaw LLM response:\n" + truncate(raw, 4000);

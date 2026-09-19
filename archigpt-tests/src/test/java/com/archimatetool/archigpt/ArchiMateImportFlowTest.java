@@ -958,4 +958,64 @@ public class ArchiMateImportFlowTest {
         }
         return connectionCount;
     }
+
+    @Test
+    public void importExistingCatalogElementOntoOpenView_placesFigure() throws Exception {
+        String d1 = "id-dddddddddddddddddddddddddddddddd";
+        String json = "{\"elements\":[{\"type\":\"DataObject\",\"name\":\"Työroolit\",\"id\":\"" + d1
+                + "\"}],\"relationships\":[]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createDataObject", "Työroolit", d1);
+        Object diagram = addEmptyDiagram(factory, model, "Current Mode of Operations");
+        assertEquals(0, childCount(diagram));
+
+        Object stats = importReturningStats(parsed, model, diagram);
+        assertEquals(1, childCount(diagram));
+        assertEquals(0, stats.getClass().getMethod("getCreatedElements").invoke(stats));
+        assertTrue((Integer) stats.getClass().getMethod("getAddedToView").invoke(stats) >= 1);
+    }
+
+    @Test
+    public void importDiagramBlockWithWrongName_isRetargetedOntoOpenView() throws Exception {
+        String d1 = "id-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        String json = "{\"elements\":[{\"type\":\"DataObject\",\"name\":\"Työroolit\",\"id\":\"" + d1 + "\"}],"
+                + "\"relationships\":[],\"diagram\":{\"name\":\"LLM New View\",\"nodes\":["
+                + "{\"elementId\":\"" + d1 + "\",\"x\":80,\"y\":90,\"width\":120,\"height\":55}],\"connections\":[]}}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createDataObject", "Työroolit", d1);
+        Object diagram = addEmptyDiagram(factory, model, "Current Mode of Operations");
+
+        Method retarget = DiagramCreationIntent.class.getMethod("retargetDiagramToOpenView",
+                ArchiMateLLMResult.class, Class.forName("com.archimatetool.model.IArchimateDiagramModel"), String.class);
+        assertEquals(Boolean.TRUE, retarget.invoke(null, parsed, diagram, "Add all data objects to this view"));
+        assertEquals("Current Mode of Operations", parsed.getDiagram().getName());
+
+        importWithDiagram(parsed, model, diagram);
+
+        assertNull(findDiagramByName(model, "LLM New View"));
+        assertEquals(1, childCount(diagram));
+    }
+
+    @Test
+    public void importReusedExampleIds_createsDistinctElements() throws Exception {
+        String json = "{\"elements\":["
+                + "{\"type\":\"DataObject\",\"name\":\"Työroolit\",\"id\":\"" + E1 + "\"},"
+                + "{\"type\":\"DataObject\",\"name\":\"Sopimukset\",\"id\":\"" + E1 + "\"}"
+                + "],\"relationships\":[]}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object stats = importReturningStats(parsed, model, null);
+        assertEquals(2, stats.getClass().getMethod("getCreatedElements").invoke(stats));
+    }
 }

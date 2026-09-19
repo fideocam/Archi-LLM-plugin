@@ -5,15 +5,41 @@ package com.archimatetool.archigpt;
 
 import java.util.Locale;
 
+import com.archimatetool.model.IArchimateDiagramModel;
+
 /**
  * Used at import time: when the user has an open diagram but did not ask for a new canvas, the LLM may still
- * emit a {@code diagram} object — that would create an unwanted second view. In that case the plugin drops
- * the diagram block and adds figures to the open view instead.
+ * emit a {@code diagram} object — that would create an unwanted second view. Nodes in that block are applied
+ * to the open view instead of being discarded.
  */
 @SuppressWarnings("nls")
 public final class DiagramCreationIntent {
 
     private DiagramCreationIntent() {}
+
+    /**
+     * When a view is already open and the user did not ask for another canvas, point any LLM
+     * {@code diagram} block at that view (so its nodes are drawn) instead of creating a second view.
+     * An empty diagram object is dropped so catalog elements can still be auto-placed on the open view.
+     *
+     * @return true if a diagram block was retargeted or dropped
+     */
+    public static boolean retargetDiagramToOpenView(ArchiMateLLMResult result, IArchimateDiagramModel openView,
+            String prompt) {
+        if (result == null || openView == null || userAskedForBrandNewView(prompt)) {
+            return false;
+        }
+        ArchiMateLLMResult.DiagramSpec diagram = result.getDiagram();
+        if (diagram == null || diagram.getName() == null || diagram.getName().trim().isEmpty()) {
+            return false;
+        }
+        if (diagram.getNodes() != null && !diagram.getNodes().isEmpty()) {
+            diagram.setName(openView.getName());
+        } else {
+            result.setDiagram(null);
+        }
+        return true;
+    }
 
     /**
      * True if the natural-language prompt clearly asks for an additional or new diagram/view canvas.

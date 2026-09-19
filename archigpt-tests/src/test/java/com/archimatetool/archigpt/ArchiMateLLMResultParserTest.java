@@ -302,4 +302,26 @@ public class ArchiMateLLMResultParserTest {
         assertEquals("Rel notes", result.getRelationships().get(0).getDocumentation());
         assertEquals(R1, result.getRelationships().get(0).getId());
     }
+
+    @Test
+    public void parse_truncatedElementsArray_keepsCompleteObjects() {
+        String json = "{\"elements\":["
+                + "{\"type\":\"DataObject\",\"name\":\"Työroolit\",\"id\":\"" + E1 + "\"},"
+                + "{\"type\":\"DataObject\",\"name\":\"Unfinished\"";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+        assertEquals(1, result.getElements().size());
+        assertEquals("DataObject", result.getElements().get(0).getType());
+        assertEquals("Työroolit", result.getElements().get(0).getName());
+        assertEquals(E1, result.getElements().get(0).getId());
+    }
+
+    @Test
+    public void parse_skipsProseBraceBeforeRealJson() {
+        String json = "{ Add data object elements and model relationships to the diagram.\n"
+                + "{\"elements\":[{\"type\":\"DataObject\",\"name\":\"Työroolit\",\"id\":\"" + E1
+                + "\"}],\"relationships\":[]}";
+        ArchiMateLLMResult result = ArchiMateLLMResultParser.parse(json);
+        assertEquals(1, result.getElements().size());
+        assertEquals("Työroolit", result.getElements().get(0).getName());
+    }
 }

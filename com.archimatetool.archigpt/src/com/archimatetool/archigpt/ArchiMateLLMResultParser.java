@@ -64,10 +64,11 @@ public final class ArchiMateLLMResultParser {
         }
         int arrayStart = m.end() - 1;
         int arrayEnd = findMatchingBracket(json, arrayStart);
-        if (arrayEnd <= arrayStart) {
-            return null;
+        if (arrayEnd > arrayStart) {
+            return json.substring(arrayStart + 1, arrayEnd);
         }
-        return json.substring(arrayStart + 1, arrayEnd);
+        // Truncated generation: keep complete objects already written after '['.
+        return json.substring(arrayStart + 1);
     }
 
     private static void parseStringArray(String json, String key, List<String> out) {
@@ -187,8 +188,21 @@ public final class ArchiMateLLMResultParser {
             if (c != '{') {
                 continue;
             }
+            int k = i + 1;
+            while (k < s.length() && Character.isWhitespace(s.charAt(k))) {
+                k++;
+            }
+            if (k < s.length()) {
+                char first = s.charAt(k);
+                // Skip "{ Add data objects..." prose that local models sometimes emit before real JSON.
+                if (first != '"' && first != '}' && first != '[') {
+                    continue;
+                }
+            }
             int end = findMatchingBracket(s, i);
-            if (end <= i) continue;
+            if (end <= i) {
+                continue;
+            }
             String candidate = s.substring(i, end + 1);
             // Must be the CHANGES payload (add, new view, or remove)
             if (candidate.contains("\"elements\"") || candidate.contains("\"diagram\"")
