@@ -151,5 +151,6 @@ If you need **live data** (e.g. query Archi’s model via an API), use **MCP ser
 - `com.archimatetool.archigpt/skills/` — bundled Tidy / View / Pattern / Technology / EA tools (`catalog.txt`)  
 - `docs/EXTERNAL_LLM_PLAN.md`, `docs/CONVERSATIONAL_CHAT.md` — broader LLM integration notes
 - `docs/CompanyMetamodel.md` — company templates, specializations, and later metamodel comparison  
+- `docs/ContextEngineeringPlan.md` — AGR, context compression, and ADR memory (issue 22)  
 
 For Cursor-specific skill authoring steps, follow Cursor’s official **create skill** / **Agent Skills** documentation for your installed version, since install paths and discovery rules change over time.
