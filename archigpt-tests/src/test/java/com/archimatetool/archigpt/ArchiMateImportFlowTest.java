@@ -1018,4 +1018,68 @@ public class ArchiMateImportFlowTest {
         Object stats = importReturningStats(parsed, model, null);
         assertEquals(2, stats.getClass().getMethod("getCreatedElements").invoke(stats));
     }
+
+    @Test
+    public void importSameDataObjectTwice_reusesOneElementAndOneFigure() throws Exception {
+        String second = "id-dddddddddddddddddddddddddddddddd";
+        String json = "{\"elements\":["
+                + "{\"type\":\"DataObject\",\"name\":\"Orders\",\"id\":\"" + E1 + "\"},"
+                + "{\"type\":\"DataObject\",\"name\":\"orders\",\"id\":\"" + second + "\"}"
+                + "],\"relationships\":[],\"diagram\":{\"name\":\"Open View\",\"nodes\":["
+                + "{\"elementId\":\"" + E1 + "\",\"x\":40,\"y\":40,\"width\":120,\"height\":55},"
+                + "{\"elementId\":\"" + second + "\",\"x\":200,\"y\":40,\"width\":120,\"height\":55}"
+                + "],\"connections\":[]}}";
+        ArchiMateLLMResult parsed = ArchiMateLLMResultParser.parse(json);
+        assertTrue(ArchiMateSchemaValidator.validate(parsed).isEmpty());
+
+        Object factory = factory();
+        Object model = createModel(factory);
+        Object diagram = addEmptyDiagram(factory, model, "Open View");
+
+        Object stats = importReturningStats(parsed, model, diagram);
+        assertEquals(1, stats.getClass().getMethod("getCreatedElements").invoke(stats));
+        assertEquals(1, countNamed(model, "Orders"));
+        assertEquals("One catalog element, one figure on the open view", 1, childCount(diagram));
+    }
+
+    @Test
+    public void importDataObjectName_doesNotCloneOrRenameAnotherElement() throws Exception {
+        Object factory = factory();
+        Object model = createModel(factory);
+        addNamedConcept(factory, model, "createDataObject", "Orders", E1);
+        addNamedConcept(factory, model, "createDataObject", "Invoices", E2);
+
+        String json = "{\"elements\":[{\"type\":\"DataObject\",\"name\":\"Orders\",\"id\":\"" + E2
+                + "\"}],\"relationships\":[]}";
+        Object stats = importReturningStats(ArchiMateLLMResultParser.parse(json), model, null);
+
+        assertEquals(0, stats.getClass().getMethod("getCreatedElements").invoke(stats));
+        assertEquals(0, stats.getClass().getMethod("getRenamedElements").invoke(stats));
+        assertEquals("Orders", nameOfId(model, E1));
+        assertEquals("Invoices", nameOfId(model, E2));
+        assertEquals(1, countNamed(model, "Orders"));
+    }
+
+    private static int countNamed(Object model, String name) throws Exception {
+        Object folders = model.getClass().getMethod("getFolders").invoke(model);
+        return countNamedInFolders(folders, name);
+    }
+
+    private static int countNamedInFolders(Object folders, String name) throws Exception {
+        int count = 0;
+        for (Object folder : (Iterable<?>) folders) {
+            Object elements = folder.getClass().getMethod("getElements").invoke(folder);
+            for (Object el : (Iterable<?>) elements) {
+                Object existing = el.getClass().getMethod("getName").invoke(el);
+                if (existing != null && existing.toString().equalsIgnoreCase(name)) {
+                    count++;
+                }
+            }
+            Object childFolders = folder.getClass().getMethod("getFolders").invoke(folder);
+            if (childFolders instanceof Iterable) {
+                count += countNamedInFolders(childFolders, name);
+            }
+        }
+        return count;
+    }
 }
